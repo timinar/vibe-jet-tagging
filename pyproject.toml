@@ -1,0 +1,21 @@
+[project]
+name = "vibe-jet-tagging"
+version = "0.1.0"
+description = "Evaluating reasoning LLMs on particle physics jet tagging (quark/gluon discrimination)"
+readme = "README.md"
+authors = [
+    { name = "Inar", email = "timinar@gmail.com" },
+    { name = "Daniel Murnane", email = "dtmurnane@lbl.gov" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
