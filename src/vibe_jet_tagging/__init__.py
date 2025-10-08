@@ -1,6 +1,7 @@
 """Vibe Jet Tagging - LLM-based jet classification."""
 
 from vibe_jet_tagging.classifier import Classifier
+from vibe_jet_tagging.llm_classifier import LLMClassifier
 from vibe_jet_tagging.baselines import (
     MLClassifier,
     MultiplicityLogisticRegression,
@@ -8,6 +9,7 @@ from vibe_jet_tagging.baselines import (
 )
 
 __all__ = [
+    "LLMClassifier",
     "Classifier",
     "MLClassifier",
     "MultiplicityLogisticRegression",

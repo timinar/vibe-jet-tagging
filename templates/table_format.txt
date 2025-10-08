@@ -1,0 +1,10 @@
+Classify this particle jet as either quark-initiated (1) or gluon-initiated (0).
+
+Particle Table:
+{{jet_table}}
+
+Instructions:
+- Quark jets: typically fewer, harder particles
+- Gluon jets: typically more, softer particles with wider angular distribution
+
+Your classification (0 or 1):
