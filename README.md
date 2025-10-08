@@ -4,7 +4,7 @@ A research project evaluating reasoning LLMs on particle physics jet tagging tas
 
 > **New to the project?** See [installing UV](#install-uv) setup instructions at the end of this README.
 
-## =� Quick Start
+## 🚀 Quick Start
 
 We use `uv` (the modern Python package manager) throughout the project for dependency management and running code (see [installing UV](#install-uv)).
 
@@ -26,7 +26,7 @@ uv sync
 uv run python scripts/your_script.py
 ```
 
-## <� Common Commands
+## Common Commands
 
 ```bash
 # Run scripts
@@ -42,11 +42,11 @@ uv add --dev dev-tool            # Add dev dependency
 uv sync                          # Install/update all dependencies
 ```
 
-## <� Project Overview
+## Project Overview
 
 We evaluate reasoning LLMs on jet-tagging tasks using particle physics data. Jet tagging involves classifying jets of particles produced in high-energy collisionsspecifically distinguishing between quark-initiated and gluon-initiated jets based on their properties.
 
-## > Contributing
+## Contributing
 
 **Quick workflow:**
 ```bash
@@ -60,12 +60,10 @@ git push origin experiment/your-idea         # Push & create PR
 
 ---
 
-## =' Setup Instructions
+## Setup Instructions
 
 ### Install UV
 
-<details>
-<summary>Click to expand UV installation instructions</summary>
 
 ```bash
 # Mac/Linux
@@ -85,4 +83,3 @@ cd vibe-jet-tagging
 uv sync
 ```
 
-</details>
