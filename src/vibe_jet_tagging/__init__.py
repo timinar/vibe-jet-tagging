@@ -2,8 +2,19 @@
 
 from vibe_jet_tagging.classifier import Classifier
 from vibe_jet_tagging.llm_classifier import LLMClassifier
+from vibe_jet_tagging.baselines import (
+    MLClassifier,
+    MultiplicityLogisticRegression,
+    XGBoostRawParticles,
+)
 
-__all__ = ["Classifier", "LLMClassifier"]
+__all__ = [
+    "LLMClassifier",
+    "Classifier",
+    "MLClassifier",
+    "MultiplicityLogisticRegression",
+    "XGBoostRawParticles",
+]
 
 
 def hello() -> str:
