@@ -1,0 +1,14 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+A jet consists of particles, each with the following properties:
+- pt: transverse momentum (GeV)
+- y: rapidity
+- phi: azimuthal angle (radians)
+- pid: particle ID
+
+Here is the jet data:
+{{jet_particles}}
+
+Based on the particle content and kinematics, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

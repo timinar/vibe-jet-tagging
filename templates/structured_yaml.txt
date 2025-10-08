@@ -1,0 +1,12 @@
+You are an expert in particle physics and jet classification.
+
+Task: Classify this jet as quark-initiated (1) or gluon-initiated (0).
+
+Jet Data (YAML format):
+```yaml
+{{jet_yaml}}
+```
+
+Background: Quark jets tend to have fewer particles with higher transverse momentum concentrated in the core, while gluon jets are typically broader with more soft particles.
+
+Classification (respond with 0 or 1 only):
