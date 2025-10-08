@@ -115,7 +115,7 @@ class MultiplicityLogisticRegression(MLClassifier):
     This is the simplest strong baseline. It uses only one feature:
     the number of particles in each jet (excluding padding).
 
-    Typical performance: AUC ~0.67-0.70
+    Typical performance: AUC ~0.84
     """
 
     def __init__(self, **kwargs):
@@ -158,7 +158,7 @@ class XGBoostRawParticles(MLClassifier):
     Uses the first 3 features (pt, rapidity, azimuthal_angle) of all particles,
     flattened into a fixed-size feature vector. Ignores pdgid to be realistic.
 
-    Typical performance: AUC ~0.73-0.76
+    Typical performance: AUC ~0.86
     """
 
     def __init__(self, n_estimators: int = 100, max_depth: int = 5, **kwargs):

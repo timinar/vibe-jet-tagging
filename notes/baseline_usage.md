@@ -56,7 +56,7 @@ X, y = data['X'], data['y']
 
 ### 1. Multiplicity Logistic Regression (Simplest Baseline)
 
-Uses only one feature: particle count per jet. Expected AUC: ~0.67-0.70
+Uses only one feature: particle count per jet. **Expected AUC: ~0.84**
 
 ```python
 from vibe_jet_tagging import MultiplicityLogisticRegression
@@ -87,7 +87,7 @@ print(f"Multiplicity LR AUC: {auc:.4f}")
 
 ### 2. XGBoost on Raw Particles (Strong Baseline)
 
-Uses flattened kinematic features (pt, rapidity, φ). Expected AUC: ~0.73-0.76
+Uses flattened kinematic features (pt, rapidity, φ). **Expected AUC: ~0.86**
 
 ```python
 from vibe_jet_tagging import XGBoostRawParticles
@@ -158,10 +158,12 @@ print("="*60)
 
 | Baseline | Typical AUC | Typical Accuracy | Description |
 |----------|-------------|------------------|-------------|
-| **Random** | 0.500 | 50% | Coin flip |
-| **Multiplicity LR** | 0.67-0.70 | 63-65% | Simple physics feature |
-| **XGBoost Raw** | 0.73-0.76 | 67-70% | Strong ML baseline |
+| **Random** | 0.500 | 50.0% | Coin flip |
+| **Multiplicity LR** | 0.843 | 76.3% | Simple physics feature |
+| **XGBoost Raw** | 0.857 | 78.1% | Strong ML baseline |
 | **Literature SOTA** | 0.923 | 85.2% | Particle Transformer (pretrained) |
+
+*Performance measured on 100k jets from the dataset with 80/20 train/test split.*
 
 ---
 
