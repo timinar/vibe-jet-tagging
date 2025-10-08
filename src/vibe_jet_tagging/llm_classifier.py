@@ -83,6 +83,35 @@ class LLMClassifier(Classifier):
         self.is_fitted = True
         return self
     
+    def preview_prompt(self, jet: Any) -> None:
+        """
+        Preview the prompt that will be sent to the LLM for a given jet.
+        
+        Parameters
+        ----------
+        jet : array-like
+            Single jet data to preview
+        """
+        prompt = fill_template(self.template, jet, self.format_type)
+        
+        print("=" * 80)
+        print("PROMPT PREVIEW")
+        print("=" * 80)
+        print(f"Model: {self.model_name}")
+        print(f"Template: {self.template_name}")
+        print(f"Format: {self.format_type}")
+        print(f"Temperature: 0.0")
+        print(f"Max tokens: 100")
+        print("\n" + "-" * 80)
+        print("SYSTEM MESSAGE:")
+        print("-" * 80)
+        print("Reasoning: disabled")
+        print("\n" + "-" * 80)
+        print("USER MESSAGE:")
+        print("-" * 80)
+        print(prompt)
+        print("=" * 80)
+    
     def predict(self, X: list[Any]) -> list[int]:
         """
         Predict jet labels using LLM.
@@ -129,14 +158,40 @@ class LLMClassifier(Classifier):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
+                    {"role": "system", "content": "Reasoning: disabled"},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.0,
-                max_tokens=10,
+                max_tokens=100,
             )
             
             # Extract response
-            content = response.choices[0].message.content.strip()
+            if not response.choices:
+                print("Warning: API returned no choices")
+                print(f"Full response: {response}")
+                return 0
+            
+            message = response.choices[0].message
+            content = message.content
+            
+            # Handle None content
+            if content is None:
+                content = ""
+            
+            content = content.strip()
+            
+            # For reasoning models (like gpt-oss-20b), check reasoning field if content is empty
+            if len(content) == 0:
+                reasoning = getattr(message, 'reasoning', None)
+                if reasoning:
+                    print(f"Note: Using reasoning field (content was empty)")
+                    print(f"Reasoning: {reasoning}")
+                    content = reasoning
+                else:
+                    print("Warning: API returned empty content and no reasoning")
+                    print(f"Finish reason: {response.choices[0].finish_reason}")
+                    print(f"Message object: {message}")
+                    return 0
             
             # Parse prediction
             prediction = self._parse_prediction(content)
@@ -175,6 +230,9 @@ class LLMClassifier(Classifier):
             return 0
         
         # Default to 0 if unclear
-        print(f"Warning: Could not parse prediction from response: '{response}'. Defaulting to 0.")
+        print(f"Warning: Could not parse prediction from response.")
+        print(f"Full response: '{response}'")
+        print(f"Response length: {len(response)} characters")
+        print(f"Defaulting to 0.")
         return 0
 
