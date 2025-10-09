@@ -430,6 +430,9 @@ class LocalLLMClassifier(Classifier):
         """
         Parse LLM response to extract 0 or 1.
 
+        The model typically provides reasoning followed by a final answer.
+        We look for the LAST occurrence of 0 or 1, which is usually the final answer.
+
         Parameters
         ----------
         response : str
@@ -440,20 +443,35 @@ class LocalLLMClassifier(Classifier):
         int
             Parsed label (0 or 1)
         """
-        # Look for 0 or 1 in the response
-        match = re.search(r'\b[01]\b', response)
-        if match:
-            return int(match.group())
+        # Strategy 1: Look for common answer patterns at the end
+        # Patterns like "answer: 1", "label: 0", "prediction: 1", or just "1" at the end
+        end_patterns = [
+            r'(?:answer|label|prediction|output|result)[:=\s]+([01])\b',
+            r'\b([01])\s*$',  # 0 or 1 at the very end
+            r'(?:thus|therefore|so|hence).*?([01])\b',  # After conclusion words
+        ]
 
-        # If not found, check for keywords
+        for pattern in end_patterns:
+            matches = list(re.finditer(pattern, response, re.IGNORECASE))
+            if matches:
+                # Get the LAST match
+                return int(matches[-1].group(1))
+
+        # Strategy 2: Find ALL occurrences of 0 or 1, take the last one
+        all_matches = list(re.finditer(r'\b[01]\b', response))
+        if all_matches:
+            # Return the LAST occurrence (most likely the final answer)
+            return int(all_matches[-1].group())
+
+        # Strategy 3: Check for keywords (fallback)
         response_lower = response.lower()
-        if "quark" in response_lower or "1" in response:
+        if "quark" in response_lower:
             return 1
-        elif "gluon" in response_lower or "0" in response:
+        elif "gluon" in response_lower:
             return 0
 
         # Default to 0 if unclear
-        print(f"Warning: Could not parse prediction from response: '{response}'")
+        print(f"Warning: Could not parse prediction from response: '{response[:100]}...'")
         return 0
 
     def _print_cumulative_stats(self) -> None:
