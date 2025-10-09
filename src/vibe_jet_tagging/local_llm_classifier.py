@@ -149,7 +149,16 @@ class LocalLLMClassifier(Classifier):
 
         if use_async:
             # Use async for concurrent requests
-            predictions = asyncio.run(self._predict_async(X, verbose=verbose))
+            # Check if we're in a notebook with an existing event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in a notebook/existing event loop
+                import nest_asyncio
+                nest_asyncio.apply()
+                predictions = asyncio.run(self._predict_async(X, verbose=verbose))
+            except RuntimeError:
+                # No running loop, we can use asyncio.run()
+                predictions = asyncio.run(self._predict_async(X, verbose=verbose))
         else:
             # Sequential processing
             predictions = []
@@ -248,26 +257,59 @@ class LocalLLMClassifier(Classifier):
                 print(f"Response object: {response}")
                 return 0
 
+            # Extract reasoning trace for verbose output
+            reasoning_trace = None
+            if verbose and hasattr(response, 'output') and isinstance(response.output, list):
+                if len(response.output) > 0 and hasattr(response.output[0], 'content'):
+                    if isinstance(response.output[0].content, list) and len(response.output[0].content) > 0:
+                        if hasattr(response.output[0].content[0], 'text'):
+                            reasoning_trace = response.output[0].content[0].text
+
             # Track token usage if available
             if hasattr(response, 'usage'):
                 usage = response.usage
-                prompt_tokens = getattr(usage, 'prompt_tokens', 0) or 0
-                completion_tokens = getattr(usage, 'completion_tokens', 0) or 0
-                reasoning_tokens = getattr(usage, 'reasoning_tokens', 0) or 0
-                total_tokens = getattr(usage, 'total_tokens', 0) or (prompt_tokens + completion_tokens + reasoning_tokens)
+
+                # OpenAI Responses API uses input_tokens, output_tokens, total_tokens
+                # (not prompt_tokens, completion_tokens, reasoning_tokens)
+                input_tokens = getattr(usage, 'input_tokens', None)
+                output_tokens = getattr(usage, 'output_tokens', None)
+                total_tokens = getattr(usage, 'total_tokens', None)
+
+                # Fallback to alternative names if needed
+                if input_tokens is None:
+                    input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+                if output_tokens is None:
+                    output_tokens = getattr(usage, 'completion_tokens', 0) or 0
+                if total_tokens is None:
+                    total_tokens = input_tokens + output_tokens
+
+                # Estimate reasoning vs completion tokens from character lengths
+                reasoning_tokens_est = 0
+                completion_tokens_est = output_tokens
+
+                if reasoning_trace and content:
+                    reasoning_chars = len(reasoning_trace)
+                    completion_chars = len(content)
+                    total_chars = reasoning_chars + completion_chars
+
+                    if total_chars > 0:
+                        # Split output_tokens proportionally based on character length
+                        reasoning_ratio = reasoning_chars / total_chars
+                        reasoning_tokens_est = int(output_tokens * reasoning_ratio)
+                        completion_tokens_est = output_tokens - reasoning_tokens_est
 
                 # Update cumulative totals
-                self.total_prompt_tokens += prompt_tokens
-                self.total_completion_tokens += completion_tokens
-                self.total_reasoning_tokens += reasoning_tokens
+                self.total_prompt_tokens += input_tokens
+                self.total_completion_tokens += completion_tokens_est
+                self.total_reasoning_tokens += reasoning_tokens_est
 
                 # Calculate cost (example pricing - adjust based on actual costs)
                 # Using similar rates to Gemini for consistency
                 input_cost_per_token = 0.000000075
                 output_cost_per_token = 0.0000003
 
-                input_cost = prompt_tokens * input_cost_per_token
-                output_cost = (completion_tokens + reasoning_tokens) * output_cost_per_token
+                input_cost = input_tokens * input_cost_per_token
+                output_cost = output_tokens * output_cost_per_token
                 call_cost = input_cost + output_cost
 
                 self.total_cost += call_cost
@@ -276,24 +318,35 @@ class LocalLLMClassifier(Classifier):
                     print("\n" + "─" * 60)
                     print("📊 TOKEN USAGE")
                     print("─" * 60)
-                    print(f"Prompt tokens:     {prompt_tokens:,}")
-                    print(f"Completion tokens: {completion_tokens:,}")
-                    if reasoning_tokens > 0:
-                        print(f"Reasoning tokens:  {reasoning_tokens:,}")
-                        print(f"├─ Reasoning:      {reasoning_tokens:,}")
-                        print(f"└─ Output:         {completion_tokens:,}")
-                    print(f"Total tokens:      {total_tokens:,}")
+                    print(f"Input tokens:        {input_tokens:,}")
+                    print(f"Output tokens:       {output_tokens:,}")
+                    if reasoning_tokens_est > 0:
+                        print(f"  ├─ Reasoning (est): {reasoning_tokens_est:,}")
+                        print(f"  └─ Completion:      {completion_tokens_est:,}")
+                    print(f"Total tokens:        {total_tokens:,}")
 
                     print(f"\n💰 COST")
-                    print(f"Input cost:        ${input_cost:.6f}")
-                    print(f"Output cost:       ${output_cost:.6f}")
-                    print(f"Call cost:         ${call_cost:.6f}")
+                    print(f"Input cost:          ${input_cost:.6f}")
+                    print(f"Output cost:         ${output_cost:.6f}")
+                    print(f"Call cost:           ${call_cost:.6f}")
 
             if verbose:
+                # Show reasoning trace if available
+                if reasoning_trace:
+                    print(f"\n🧠 REASONING TRACE")
+                    print("─" * 60)
+                    # Show preview (first 300 chars) or full if short
+                    if len(reasoning_trace) > 300:
+                        print(f"{reasoning_trace[:300]}...")
+                        print(f"[... {len(reasoning_trace) - 300} more characters ...]")
+                    else:
+                        print(reasoning_trace)
+                    print("─" * 60)
+
                 # Show final response
-                print(f"\n✨ RESPONSE")
+                print(f"\n✨ FINAL OUTPUT")
                 print("─" * 60)
-                print(f"Content: {content}")
+                print(f"{content}")
                 print("─" * 60 + "\n")
 
             # Parse prediction
@@ -368,26 +421,56 @@ class LocalLLMClassifier(Classifier):
                 print(f"Response object: {response}")
                 return 0
 
+            # Extract reasoning trace for verbose output (async version)
+            reasoning_trace = None
+            if verbose and hasattr(response, 'output') and isinstance(response.output, list):
+                if len(response.output) > 0 and hasattr(response.output[0], 'content'):
+                    if isinstance(response.output[0].content, list) and len(response.output[0].content) > 0:
+                        if hasattr(response.output[0].content[0], 'text'):
+                            reasoning_trace = response.output[0].content[0].text
+
             # Track token usage if available
             if hasattr(response, 'usage'):
                 usage = response.usage
-                prompt_tokens = getattr(usage, 'prompt_tokens', 0) or 0
-                completion_tokens = getattr(usage, 'completion_tokens', 0) or 0
-                reasoning_tokens = getattr(usage, 'reasoning_tokens', 0) or 0
-                total_tokens = getattr(usage, 'total_tokens', 0) or (prompt_tokens + completion_tokens + reasoning_tokens)
+
+                # OpenAI Responses API uses input_tokens, output_tokens, total_tokens
+                input_tokens = getattr(usage, 'input_tokens', None)
+                output_tokens = getattr(usage, 'output_tokens', None)
+                total_tokens = getattr(usage, 'total_tokens', None)
+
+                # Fallback to alternative names if needed
+                if input_tokens is None:
+                    input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+                if output_tokens is None:
+                    output_tokens = getattr(usage, 'completion_tokens', 0) or 0
+                if total_tokens is None:
+                    total_tokens = input_tokens + output_tokens
+
+                # Estimate reasoning vs completion tokens from character lengths
+                reasoning_tokens_est = 0
+                completion_tokens_est = output_tokens
+
+                if reasoning_trace and content:
+                    reasoning_chars = len(reasoning_trace)
+                    completion_chars = len(content)
+                    total_chars = reasoning_chars + completion_chars
+
+                    if total_chars > 0:
+                        reasoning_ratio = reasoning_chars / total_chars
+                        reasoning_tokens_est = int(output_tokens * reasoning_ratio)
+                        completion_tokens_est = output_tokens - reasoning_tokens_est
 
                 # Update cumulative totals (thread-safe increment would be needed for true parallelism)
-                self.total_prompt_tokens += prompt_tokens
-                self.total_completion_tokens += completion_tokens
-                self.total_reasoning_tokens += reasoning_tokens
+                self.total_prompt_tokens += input_tokens
+                self.total_completion_tokens += completion_tokens_est
+                self.total_reasoning_tokens += reasoning_tokens_est
 
-                # Calculate cost (example pricing - adjust based on actual costs)
-                # Using similar rates to Gemini for consistency
+                # Calculate cost
                 input_cost_per_token = 0.000000075
                 output_cost_per_token = 0.0000003
 
-                input_cost = prompt_tokens * input_cost_per_token
-                output_cost = (completion_tokens + reasoning_tokens) * output_cost_per_token
+                input_cost = input_tokens * input_cost_per_token
+                output_cost = output_tokens * output_cost_per_token
                 call_cost = input_cost + output_cost
 
                 self.total_cost += call_cost
@@ -396,24 +479,34 @@ class LocalLLMClassifier(Classifier):
                     print("\n" + "─" * 60)
                     print("📊 TOKEN USAGE")
                     print("─" * 60)
-                    print(f"Prompt tokens:     {prompt_tokens:,}")
-                    print(f"Completion tokens: {completion_tokens:,}")
-                    if reasoning_tokens > 0:
-                        print(f"Reasoning tokens:  {reasoning_tokens:,}")
-                        print(f"├─ Reasoning:      {reasoning_tokens:,}")
-                        print(f"└─ Output:         {completion_tokens:,}")
-                    print(f"Total tokens:      {total_tokens:,}")
+                    print(f"Input tokens:        {input_tokens:,}")
+                    print(f"Output tokens:       {output_tokens:,}")
+                    if reasoning_tokens_est > 0:
+                        print(f"  ├─ Reasoning (est): {reasoning_tokens_est:,}")
+                        print(f"  └─ Completion:      {completion_tokens_est:,}")
+                    print(f"Total tokens:        {total_tokens:,}")
 
                     print(f"\n💰 COST")
-                    print(f"Input cost:        ${input_cost:.6f}")
-                    print(f"Output cost:       ${output_cost:.6f}")
-                    print(f"Call cost:         ${call_cost:.6f}")
+                    print(f"Input cost:          ${input_cost:.6f}")
+                    print(f"Output cost:         ${output_cost:.6f}")
+                    print(f"Call cost:           ${call_cost:.6f}")
 
             if verbose:
+                # Show reasoning trace if available
+                if reasoning_trace:
+                    print(f"\n🧠 REASONING TRACE")
+                    print("─" * 60)
+                    if len(reasoning_trace) > 300:
+                        print(f"{reasoning_trace[:300]}...")
+                        print(f"[... {len(reasoning_trace) - 300} more characters ...]")
+                    else:
+                        print(reasoning_trace)
+                    print("─" * 60)
+
                 # Show final response
-                print(f"\n✨ RESPONSE")
+                print(f"\n✨ FINAL OUTPUT")
                 print("─" * 60)
-                print(f"Content: {content}")
+                print(f"{content}")
                 print("─" * 60 + "\n")
 
             # Parse prediction
