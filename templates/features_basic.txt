@@ -1,0 +1,18 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+**Key Physics Insight:**
+The most important discriminator is jet multiplicity (number of particles). Gluons radiate more readily than quarks due to their stronger QCD color charge (CA/CF = 2.25).
+
+**Dataset Statistics:**
+- Quark jets: ~33 particles on average
+- Gluon jets: ~53 particles on average
+- Optimal threshold: jets with > 38 particles are likely gluons, ≤ 38 are likely quarks
+
+Here is the jet you need to classify:
+
+**Jet Multiplicity:**
+This jet contains {{multiplicity}} particles.
+
+Based on this multiplicity, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

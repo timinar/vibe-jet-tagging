@@ -1,0 +1,24 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+**Key Physics Insights:**
+Gluons and quarks have different radiation patterns due to QCD color factors:
+1. **Higher multiplicity** → Gluon (more particles radiated)
+2. **Lower mean pT** → Gluon (softer fragmentation)
+3. **Higher mean pT** → Quark (harder fragmentation)
+
+**Typical Patterns:**
+- Quark jets: ~33 particles, mean pT ~15.7 GeV
+- Gluon jets: ~53 particles, mean pT ~9.8 GeV
+
+Here is the jet you need to classify:
+
+{{jet_features}}
+
+**Classification Guidelines:**
+- High multiplicity (> 38) + Low mean pT (< 12 GeV) → Strong gluon signal
+- Low multiplicity (≤ 38) + High mean pT (> 12 GeV) → Strong quark signal
+- Consider both features together for best accuracy
+
+Based on these kinematic features, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

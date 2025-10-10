@@ -1,5 +1,6 @@
 """Data formatters for converting jet data to text representations."""
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -145,4 +146,129 @@ def fill_template(template: str, jet: Any, format_type: str = "list") -> str:
         result = result.replace(placeholder, value)
     
     return result
+
+
+def format_features_as_text(features: dict[str, float]) -> str:
+    """
+    Format extracted features as human-readable text for LLM prompts.
+    
+    Parameters
+    ----------
+    features : dict[str, float]
+        Dictionary of feature names to values
+    
+    Returns
+    -------
+    str
+        Formatted feature text
+    """
+    lines = ["Jet Features:"]
+    
+    # Format each feature with appropriate units and precision
+    feature_formats = {
+        'multiplicity': ('Multiplicity', '{:.0f} particles', 1),
+        'mean_pt': ('Mean pT', '{:.2f} GeV', 1),
+        'std_pt': ('pT Std Dev', '{:.2f} GeV', 1),
+        'median_pt': ('Median pT', '{:.2f} GeV', 1),
+        'max_pt': ('Max pT', '{:.2f} GeV', 1),
+        'lead_pt_frac': ('Leading pT Fraction', '{:.3f}', 1),
+        'top3_pt_frac': ('Top-3 pT Fraction', '{:.3f}', 1),
+        'top5_pt_frac': ('Top-5 pT Fraction', '{:.3f}', 1),
+    }
+    
+    for key, value in features.items():
+        if key in feature_formats:
+            name, fmt, indent = feature_formats[key]
+            formatted_value = fmt.format(value)
+            lines.append(f"  {name}: {formatted_value}")
+        else:
+            # Fallback for unknown features
+            lines.append(f"  {key}: {value:.3f}")
+    
+    return "\n".join(lines)
+
+
+def infer_required_features(template: str) -> set[str]:
+    """
+    Infer which features are required by parsing template placeholders.
+    
+    Scans for placeholders like:
+    - {{jet_features}} - generic features placeholder
+    - {{multiplicity}} - specific feature
+    - {{mean_pt}} - specific feature
+    
+    Parameters
+    ----------
+    template : str
+        Template string to parse
+    
+    Returns
+    -------
+    set[str]
+        Set of required feature names, or 'features' for generic placeholder
+    """
+    # Find all placeholders in format {{...}}
+    placeholders = re.findall(r'\{\{([^}]+)\}\}', template)
+    
+    required = set()
+    
+    for placeholder in placeholders:
+        placeholder = placeholder.strip()
+        
+        # Generic features placeholder
+        if placeholder == 'jet_features':
+            required.add('features')
+        # Specific feature placeholders
+        elif placeholder in [
+            'multiplicity', 'mean_pt', 'std_pt', 'median_pt', 'max_pt',
+            'lead_pt_frac', 'top3_pt_frac', 'top5_pt_frac'
+        ]:
+            required.add(placeholder)
+    
+    return required
+
+
+def select_extractor_for_template(template: str) -> str:
+    """
+    Auto-select appropriate feature extractor based on template requirements.
+    
+    Parameters
+    ----------
+    template : str
+        Template string to analyze
+    
+    Returns
+    -------
+    str
+        Recommended extractor name: 'basic', 'kinematic', 'concentration', 'full', or 'none'
+    """
+    required = infer_required_features(template)
+    
+    # If no features required, use none
+    if not required:
+        return 'none'
+    
+    # If generic features placeholder, use full extractor
+    if 'features' in required:
+        return 'full'
+    
+    # Check which specific features are needed
+    basic_features = {'multiplicity'}
+    kinematic_features = {'mean_pt', 'std_pt', 'median_pt', 'max_pt'}
+    concentration_features = {'lead_pt_frac', 'top3_pt_frac', 'top5_pt_frac'}
+    
+    needs_kinematic = bool(required & kinematic_features)
+    needs_concentration = bool(required & concentration_features)
+    
+    # Select based on what's needed
+    if needs_kinematic and needs_concentration:
+        return 'full'
+    elif needs_kinematic:
+        return 'kinematic'
+    elif needs_concentration:
+        return 'concentration'
+    elif required & basic_features:
+        return 'basic'
+    else:
+        return 'none'
 

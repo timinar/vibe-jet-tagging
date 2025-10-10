@@ -1,0 +1,21 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+**High-Level Features:**
+{{jet_features}}
+
+**Typical Patterns:**
+- Quark jets: ~33 particles, mean pT ~15.7 GeV
+- Gluon jets: ~53 particles, mean pT ~9.8 GeV
+
+**Classification Guidelines:**
+- High multiplicity (> 38) + Low mean pT (< 12 GeV) → Strong gluon signal
+- Low multiplicity (≤ 38) + High mean pT (> 12 GeV) → Strong quark signal
+
+**Raw Particle Data:**
+Below are the individual particles in this jet:
+
+{{jet_particles}}
+
+Based on both the extracted features and the raw particle data, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.
