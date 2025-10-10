@@ -175,39 +175,43 @@ class LocalLLMClassifier(Classifier):
                         self._predict_async(X, verbose=verbose, max_concurrent=max_concurrent)
                     )
                 finally:
-                    # Clean up async client before closing loop
+                    # Comprehensive cleanup to avoid "Event loop is closed" errors
                     try:
-                        if self.async_client:
-                            loop.run_until_complete(self.async_client.aclose())
-                    except Exception:
-                        pass
-
-                    # Clean up pending tasks before closing
-                    try:
-                        # Cancel any pending tasks
+                        # 1. Cancel all pending tasks first
                         pending = asyncio.all_tasks(loop)
                         for task in pending:
                             task.cancel()
-                        # Wait for tasks to be cancelled
+
+                        # 2. Wait for tasks to be cancelled
                         if pending:
                             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-                    except Exception:
+
+                        # 3. Close the async client explicitly
+                        if self.async_client:
+                            loop.run_until_complete(self.async_client.aclose())
+
+                        # 4. Give a moment for cleanup
+                        loop.run_until_complete(asyncio.sleep(0.1))
+
+                    except Exception as e:
+                        # Suppress cleanup errors but continue
                         pass
 
-                    # Close the loop
-                    try:
-                        loop.close()
-                    except Exception:
-                        pass
+                    finally:
+                        # 5. Close the loop
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
 
-                    # Create a new async client for next use
-                    try:
-                        self.async_client = AsyncOpenAI(
-                            base_url=self.base_url,
-                            api_key=self.api_key,
-                        )
-                    except Exception:
-                        pass
+                        # 6. Create a new async client for next use
+                        try:
+                            self.async_client = AsyncOpenAI(
+                                base_url=self.base_url,
+                                api_key=self.api_key,
+                            )
+                        except Exception:
+                            pass
         else:
             # Sequential processing
             predictions = []
