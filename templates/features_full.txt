@@ -1,0 +1,43 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+**Physics Background:**
+Quark and gluon jets differ due to QCD color factors (CA/CF = 2.25). This manifests in multiple observable features.
+
+**Feature Interpretation Guide:**
+
+1. **Multiplicity** (most important)
+   - Quark: 33.4 ± 13.3 particles
+   - Gluon: 53.2 ± 15.8 particles
+   - Threshold: > 38 particles → gluon
+
+2. **Mean pT** (second most important)
+   - Quark: higher (~15.7 GeV) - harder fragmentation
+   - Gluon: lower (~9.8 GeV) - softer fragmentation
+
+3. **pT Concentration** (leading/top-N fractions)
+   - Quark: more concentrated energy (fewer hard particles)
+   - Gluon: more diffuse energy (many soft particles)
+   - Higher leading pT fraction → quark
+   - Lower leading pT fraction → gluon
+
+4. **pT Spread (std dev)**
+   - Indicates how widely distributed the energy is
+   - Combine with mean pT for full picture
+
+Here is the jet you need to classify:
+
+{{jet_features}}
+
+**Decision Strategy:**
+1. Start with multiplicity - this alone gives ~77% accuracy
+2. Refine with mean pT - distinguishes edge cases
+3. Use pT concentration for final confidence
+4. Combine all features for best performance
+
+**Expected Performance:**
+- Using multiplicity alone: ~84% AUC
+- Using all features: ~85% AUC
+
+Based on all these engineered features, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

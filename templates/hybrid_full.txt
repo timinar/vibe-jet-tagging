@@ -1,0 +1,31 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+**Engineered Features Summary:**
+{{jet_features}}
+
+**Feature Interpretation:**
+1. **Multiplicity** - Most important: Quark ~33, Gluon ~53 (threshold: 38)
+2. **Mean pT** - Quark: higher (~15.7 GeV), Gluon: lower (~9.8 GeV)
+3. **pT Concentration** - Quark: more concentrated, Gluon: more diffuse
+4. **pT Spread** - Indicates energy distribution
+
+**Decision Strategy:**
+1. Start with multiplicity (gives ~77% accuracy alone)
+2. Refine with mean pT
+3. Check pT concentration for confirmation
+4. Examine raw particles for edge cases
+
+**Raw Particle Data:**
+Here are all the individual particles in this jet for detailed analysis:
+
+{{jet_particles}}
+
+**Instructions:**
+Use the high-level features as your primary guide, but refer to the raw particle data to:
+- Verify the features make sense
+- Check for unusual patterns
+- Make final decision on edge cases
+
+Based on the engineered features and raw particle data, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

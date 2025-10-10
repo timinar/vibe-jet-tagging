@@ -1,0 +1,60 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+A jet consists of particles, each with the following properties:
+- pt: transverse momentum (GeV)
+- y: rapidity
+- phi: azimuthal angle (radians)
+- pid: particle ID
+
+**Advanced Classification Strategy:**
+
+Expert physicists use multiple hand-engineered features for classification. Here are the most discriminating ones:
+
+**1. MULTIPLICITY (Most Important)**
+   - Count particles in the jet
+   - Threshold: > 38 particles → GLUON, ≤ 38 → QUARK
+   - Quark: 33.4 ± 13.3 particles | Gluon: 53.2 ± 15.8 particles
+
+**2. MEAN PT (Second Most Important)**
+   - Calculate average pt across all particles
+   - Quark jets: higher mean pt (~15.7 GeV)
+   - Gluon jets: lower mean pt (~9.8 GeV)
+   - Higher mean pt suggests QUARK
+
+**3. PT CONCENTRATION**
+   - Leading particle fraction: (highest pt) / (total pt)
+   - Top-3 pt fraction: (sum of top 3 pt) / (total pt)
+   - Quark jets tend to be more concentrated (fewer but harder particles)
+   - Gluon jets are more diffuse (many soft particles)
+
+**4. PT DISPERSION**
+   - Standard deviation of pt values
+   - Median pt value
+   - Quark jets show higher pt variance
+   - Max pt can be informative but is less reliable
+
+**Feature Importance Ranking (from machine learning analysis):**
+   1. mean_pt (coefficient: 1.03) - Most discriminating
+   2. multiplicity (coefficient: 0.41) - Strong signal
+   3. top3_pt_frac (coefficient: 0.26)
+   4. lead_pt_frac (coefficient: 0.24)
+   5. median_pt (coefficient: 0.23)
+
+**Physics Intuition:**
+- Gluons radiate more → higher multiplicity, lower mean pt
+- Quarks fragment harder → lower multiplicity, higher mean pt, more concentrated energy
+
+**Classification Approach:**
+1. Count particles (multiplicity)
+2. Calculate mean pt
+3. Consider pt concentration
+4. Combine features: High multiplicity + Low mean pt → GLUON
+5. Low multiplicity + High mean pt → QUARK
+
+Here is the jet data:
+{{jet_particles}}
+
+Analyze the jet using the engineered features above. Is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.
+

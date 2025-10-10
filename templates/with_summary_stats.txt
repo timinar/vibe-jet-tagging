@@ -1,0 +1,29 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+A jet consists of particles, each with the following properties:
+- pt: transverse momentum (GeV)
+- y: rapidity
+- phi: azimuthal angle (radians)
+- pid: particle ID
+
+**Key Physics Insight:**
+Based on quantum chromodynamics (QCD), gluons and quarks have different radiation patterns:
+
+- Quark jets typically have: ~33 particles per jet (mean: 33.4 ± 13.3)
+- Gluon jets typically have: ~53 particles per jet (mean: 53.2 ± 15.8)
+- Gluon/Quark ratio: 1.59 (gluons have ~59% more particles)
+
+This multiplicity difference is the primary discriminating feature. Gluon jets radiate more particles due to their stronger QCD color charge (CA/CF = 2.25).
+
+Additional patterns:
+- Quark jet particles have higher average pt: 15.7 ± 32.6 GeV
+- Gluon jet particles have lower average pt: 9.8 ± 17.8 GeV
+- Both jet types have similar rapidity and azimuthal angle distributions
+
+Here is the jet data:
+{{jet_particles}}
+
+Based on the particle content and kinematics, is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.
+
