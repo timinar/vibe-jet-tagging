@@ -60,15 +60,18 @@ class LocalLLMClassifier(Classifier):
         # Load template
         self.template = load_template(template_name, templates_dir)
 
-        # Set up both sync and async OpenAI clients with local server
+        # Store connection parameters
+        self.base_url = base_url
+        self.api_key = api_key
+
+        # Set up sync OpenAI client
         self.client = OpenAI(
             base_url=base_url,
             api_key=api_key
         )
-        self.async_client = AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key
-        )
+
+        # Create async client lazily (only when needed)
+        self._async_client: Optional[AsyncOpenAI] = None
 
         self.is_fitted = False
 
@@ -80,6 +83,26 @@ class LocalLLMClassifier(Classifier):
 
         # Persistent event loop for async operations
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @property
+    def async_client(self) -> AsyncOpenAI:
+        """
+        Get or create the async OpenAI client.
+
+        The client is created lazily to avoid cleanup issues when
+        multiple classifier instances are created sequentially.
+
+        Returns
+        -------
+        AsyncOpenAI
+            The async client
+        """
+        if self._async_client is None:
+            self._async_client = AsyncOpenAI(
+                base_url=self.base_url,
+                api_key=self.api_key,
+            )
+        return self._async_client
 
     def _get_or_create_event_loop(self) -> asyncio.AbstractEventLoop:
         """
@@ -131,14 +154,34 @@ class LocalLLMClassifier(Classifier):
         Call this when you're completely done with the classifier to free resources.
         For sequential runs, you don't need to call this between predict() calls.
         """
-        if self._event_loop is not None and not self._event_loop.is_closed():
-            # Clean up async client first
-            if self.async_client:
+        # Clean up async client first (if it was created)
+        if self._async_client is not None:
+            try:
+                # Close the async client synchronously
+                import asyncio
+                # Check if there's a running loop
                 try:
-                    self._event_loop.run_until_complete(self.async_client.aclose())
-                except Exception:
-                    pass
+                    loop = asyncio.get_running_loop()
+                    # We're in an async context, schedule the close
+                    asyncio.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    # No running loop, use our persistent loop if available
+                    if self._event_loop is not None and not self._event_loop.is_closed():
+                        self._event_loop.run_until_complete(self._async_client.aclose())
+                    else:
+                        # Create a temporary loop just for cleanup
+                        temp_loop = asyncio.new_event_loop()
+                        try:
+                            temp_loop.run_until_complete(self._async_client.aclose())
+                        finally:
+                            temp_loop.close()
+            except Exception:
+                pass
+            finally:
+                self._async_client = None
 
+        # Clean up event loop
+        if self._event_loop is not None and not self._event_loop.is_closed():
             # Cancel any pending tasks
             try:
                 pending = asyncio.all_tasks(self._event_loop)
@@ -160,8 +203,17 @@ class LocalLLMClassifier(Classifier):
             self._event_loop = None
 
     def __del__(self):
-        """Cleanup on deletion."""
-        self.close()
+        """
+        Cleanup on deletion.
+
+        Note: We don't call close() here because it can cause issues when
+        multiple classifier instances are garbage collected while event loops
+        are active. The async client will be cleaned up naturally by Python's
+        garbage collector.
+        """
+        # Don't call close() - let Python handle cleanup
+        # This prevents "Event loop is closed" errors during garbage collection
+        pass
 
     def fit(self, X: list[Any], y: list[Any]) -> "LocalLLMClassifier":
         """
