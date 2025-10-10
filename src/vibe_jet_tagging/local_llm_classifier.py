@@ -175,6 +175,13 @@ class LocalLLMClassifier(Classifier):
                         self._predict_async(X, verbose=verbose, max_concurrent=max_concurrent)
                     )
                 finally:
+                    # Clean up async client before closing loop
+                    try:
+                        if self.async_client:
+                            loop.run_until_complete(self.async_client.aclose())
+                    except Exception:
+                        pass
+
                     # Clean up pending tasks before closing
                     try:
                         # Cancel any pending tasks
@@ -186,8 +193,21 @@ class LocalLLMClassifier(Classifier):
                             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                     except Exception:
                         pass
+
                     # Close the loop
-                    loop.close()
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass
+
+                    # Create a new async client for next use
+                    try:
+                        self.async_client = AsyncOpenAI(
+                            base_url=self.base_url,
+                            api_key=self.api_key,
+                        )
+                    except Exception:
+                        pass
         else:
             # Sequential processing
             predictions = []
