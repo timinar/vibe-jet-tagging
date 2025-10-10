@@ -28,3 +28,9 @@ This project evaluates reasoning LLMs on particle physics jet tagging tasks, spe
 - Write tests for all new functionality
 - Aim for high test coverage
 - Tests should be in `tests/` mirroring the `src/` structure
+
+## Documentation and Notes
+
+- Put documentation and notes in `notes/` directory
+- Start note filenames with the date in YYYY-MM-DD format (e.g., `2025-10-10-async-fixes.md`)
+- Keep the project root clean - avoid creating documentation files in root

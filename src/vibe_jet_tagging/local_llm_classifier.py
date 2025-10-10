@@ -72,11 +72,11 @@ class LocalLLMClassifier(Classifier):
 
         self.is_fitted = False
 
-        # Track cumulative token usage and costs
+        # Track cumulative token usage and generation time
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
-        self.total_reasoning_tokens = 0
-        self.total_cost = 0.0
+        self.total_reasoning_tokens = 0  # Reasoning/thinking tokens (estimated)
+        self.total_generation_time = 0.0  # Total time spent in generation (seconds)
 
     def fit(self, X: list[Any], y: list[Any]) -> "LocalLLMClassifier":
         """
@@ -125,7 +125,13 @@ class LocalLLMClassifier(Classifier):
         print(prompt)
         print("=" * 80)
 
-    def predict(self, X: list[Any], verbose: bool = False, use_async: bool = True) -> list[int]:
+    def predict(
+        self,
+        X: list[Any],
+        verbose: bool = False,
+        use_async: bool = True,
+        max_concurrent: int = 50
+    ) -> list[int]:
         """
         Predict jet labels using local LLM.
 
@@ -134,10 +140,13 @@ class LocalLLMClassifier(Classifier):
         X : list
             List of jets to classify
         verbose : bool
-            If True, print detailed token usage and cost information
+            If True, print detailed token usage and generation time information
         use_async : bool
             If True, use async/concurrent requests (default: True)
             Set to False for sequential processing
+        max_concurrent : int
+            Maximum number of concurrent requests (default: 50)
+            Helps prevent overwhelming the server with large batches
 
         Returns
         -------
@@ -158,7 +167,27 @@ class LocalLLMClassifier(Classifier):
                 predictions = asyncio.run(self._predict_async(X, verbose=verbose))
             except RuntimeError:
                 # No running loop, we can use asyncio.run()
-                predictions = asyncio.run(self._predict_async(X, verbose=verbose))
+                # Use a new event loop to avoid cleanup issues
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    predictions = loop.run_until_complete(
+                        self._predict_async(X, verbose=verbose, max_concurrent=max_concurrent)
+                    )
+                finally:
+                    # Clean up pending tasks before closing
+                    try:
+                        # Cancel any pending tasks
+                        pending = asyncio.all_tasks(loop)
+                        for task in pending:
+                            task.cancel()
+                        # Wait for tasks to be cancelled
+                        if pending:
+                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                    except Exception:
+                        pass
+                    # Close the loop
+                    loop.close()
         else:
             # Sequential processing
             predictions = []
@@ -171,29 +200,51 @@ class LocalLLMClassifier(Classifier):
 
         return predictions
 
-    async def _predict_async(self, X: list[Any], verbose: bool = False) -> list[int]:
+    async def _predict_async(
+        self, X: list[Any], verbose: bool = False, max_concurrent: int = 50
+    ) -> list[int]:
         """
-        Predict labels for multiple jets concurrently using async.
+        Predict labels for multiple jets concurrently using async with batching.
 
         Parameters
         ----------
         X : list
             List of jets to classify
         verbose : bool
-            If True, print detailed token usage and cost information
+            If True, print detailed token usage and generation time information
+        max_concurrent : int
+            Maximum number of concurrent requests
 
         Returns
         -------
         list[int]
             Predicted labels (0 for gluon, 1 for quark)
         """
-        # Create concurrent tasks for all jets
-        tasks = [self._predict_single_async(jet, verbose=verbose) for jet in X]
+        # Use semaphore to limit concurrent requests
+        semaphore = asyncio.Semaphore(max_concurrent)
 
-        # Run all tasks concurrently
-        predictions = await asyncio.gather(*tasks)
+        async def bounded_predict(jet):
+            async with semaphore:
+                return await self._predict_single_async(jet, verbose=verbose)
 
-        return list(predictions)
+        # Create tasks with concurrency control
+        tasks = [bounded_predict(jet) for jet in X]
+
+        # Run all tasks with controlled concurrency
+        predictions = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Handle any exceptions
+        results = []
+        for i, pred in enumerate(predictions):
+            if isinstance(pred, Exception):
+                print(f"Warning: Error predicting jet {i}: {pred}")
+                # Return random guess on error
+                import random
+                results.append(random.randint(0, 1))
+            else:
+                results.append(pred)
+
+        return results
 
     def _predict_single(self, jet: Any, verbose: bool = False) -> int:
         """
@@ -204,7 +255,7 @@ class LocalLLMClassifier(Classifier):
         jet : array-like
             Single jet data
         verbose : bool
-            If True, print detailed token usage and cost information
+            If True, print detailed token usage and generation time information
 
         Returns
         -------
@@ -223,6 +274,8 @@ class LocalLLMClassifier(Classifier):
                 print(f"Reasoning summary: {self.reasoning_summary}")
                 print()
 
+            import time
+            start_time = time.time()
             response = self.client.responses.create(
                 model=self.model_name,
                 instructions="You are a helpful assistant.",
@@ -232,6 +285,8 @@ class LocalLLMClassifier(Classifier):
                     "summary": self.reasoning_summary
                 }
             )
+            generation_time = time.time() - start_time
+            self.total_generation_time += generation_time
 
             # Extract response content
             # The response.output is a list of ResponseReasoningItem objects
@@ -257,9 +312,9 @@ class LocalLLMClassifier(Classifier):
                 print(f"Response object: {response}")
                 return 0
 
-            # Extract reasoning trace for verbose output
+            # Extract reasoning trace (needed for token estimation, not just verbose output)
             reasoning_trace = None
-            if verbose and hasattr(response, 'output') and isinstance(response.output, list):
+            if hasattr(response, 'output') and isinstance(response.output, list):
                 if len(response.output) > 0 and hasattr(response.output[0], 'content'):
                     if isinstance(response.output[0].content, list) and len(response.output[0].content) > 0:
                         if hasattr(response.output[0].content[0], 'text'):
@@ -283,36 +338,36 @@ class LocalLLMClassifier(Classifier):
                 if total_tokens is None:
                     total_tokens = input_tokens + output_tokens
 
-                # Estimate reasoning vs completion tokens from character lengths
-                reasoning_tokens_est = 0
-                completion_tokens_est = output_tokens
+                # TODO: Improve reasoning token calculation. Currently estimated from character
+                # lengths, but OpenAI Responses API should provide accurate reasoning token counts.
+                # Check if the API returns reasoning_tokens separately in usage object.
 
-                if reasoning_trace and content:
-                    reasoning_chars = len(reasoning_trace)
-                    completion_chars = len(content)
-                    total_chars = reasoning_chars + completion_chars
+                # Try to get reasoning tokens directly from API
+                reasoning_tokens = getattr(usage, 'reasoning_tokens', None)
 
-                    if total_chars > 0:
-                        # Split output_tokens proportionally based on character length
-                        reasoning_ratio = reasoning_chars / total_chars
-                        reasoning_tokens_est = int(output_tokens * reasoning_ratio)
-                        completion_tokens_est = output_tokens - reasoning_tokens_est
+                if reasoning_tokens is None:
+                    # Fallback: estimate from character lengths if reasoning trace exists
+                    reasoning_tokens = 0
+                    completion_tokens_est = output_tokens
+
+                    if reasoning_trace and content:
+                        reasoning_chars = len(reasoning_trace)
+                        completion_chars = len(content)
+                        total_chars = reasoning_chars + completion_chars
+
+                        if total_chars > 0:
+                            # Split output_tokens proportionally based on character length
+                            reasoning_ratio = reasoning_chars / total_chars
+                            reasoning_tokens = int(output_tokens * reasoning_ratio)
+                            completion_tokens_est = output_tokens - reasoning_tokens
+                else:
+                    # API provided reasoning tokens directly
+                    completion_tokens_est = output_tokens - reasoning_tokens
 
                 # Update cumulative totals
                 self.total_prompt_tokens += input_tokens
                 self.total_completion_tokens += completion_tokens_est
-                self.total_reasoning_tokens += reasoning_tokens_est
-
-                # Calculate cost (example pricing - adjust based on actual costs)
-                # Using similar rates to Gemini for consistency
-                input_cost_per_token = 0.000000075
-                output_cost_per_token = 0.0000003
-
-                input_cost = input_tokens * input_cost_per_token
-                output_cost = output_tokens * output_cost_per_token
-                call_cost = input_cost + output_cost
-
-                self.total_cost += call_cost
+                self.total_reasoning_tokens += reasoning_tokens
 
                 if verbose:
                     print("\n" + "─" * 60)
@@ -320,15 +375,13 @@ class LocalLLMClassifier(Classifier):
                     print("─" * 60)
                     print(f"Input tokens:        {input_tokens:,}")
                     print(f"Output tokens:       {output_tokens:,}")
-                    if reasoning_tokens_est > 0:
-                        print(f"  ├─ Reasoning (est): {reasoning_tokens_est:,}")
+                    if reasoning_tokens > 0:
+                        print(f"  ├─ Reasoning (est): {reasoning_tokens:,}")
                         print(f"  └─ Completion:      {completion_tokens_est:,}")
                     print(f"Total tokens:        {total_tokens:,}")
 
-                    print(f"\n💰 COST")
-                    print(f"Input cost:          ${input_cost:.6f}")
-                    print(f"Output cost:         ${output_cost:.6f}")
-                    print(f"Call cost:           ${call_cost:.6f}")
+                    print(f"\n⏱️  GENERATION TIME")
+                    print(f"Generation time:     {generation_time:.3f}s")
 
             if verbose:
                 # Show reasoning trace if available
@@ -359,16 +412,20 @@ class LocalLLMClassifier(Classifier):
             import random
             return random.randint(0, 1)
 
-    async def _predict_single_async(self, jet: Any, verbose: bool = False) -> int:
+    async def _predict_single_async(
+        self, jet: Any, verbose: bool = False, max_retries: int = 3
+    ) -> int:
         """
-        Predict label for a single jet asynchronously.
+        Predict label for a single jet asynchronously with retry logic.
 
         Parameters
         ----------
         jet : array-like
             Single jet data
         verbose : bool
-            If True, print detailed token usage and cost information
+            If True, print detailed token usage and generation time information
+        max_retries : int
+            Maximum number of retry attempts on connection errors
 
         Returns
         -------
@@ -378,7 +435,55 @@ class LocalLLMClassifier(Classifier):
         # Format jet and fill template
         prompt = fill_template(self.template, jet, self.format_type)
 
-        # Call local LLM API asynchronously
+        # Retry logic for connection errors
+        for attempt in range(max_retries):
+            try:
+                return await self._predict_single_async_impl(jet, prompt, verbose)
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check if it's a connection error worth retrying
+                if any(keyword in error_msg for keyword in ['connection', 'timeout', 'refused']):
+                    if attempt < max_retries - 1:
+                        # Wait before retrying (exponential backoff)
+                        wait_time = 0.5 * (2 ** attempt)
+                        if verbose:
+                            print(f"Connection error, retrying in {wait_time:.1f}s... (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"Error calling local LLM API (async): {e}")
+                        import random
+                        return random.randint(0, 1)
+                else:
+                    # Not a connection error, don't retry
+                    print(f"Error calling local LLM API (async): {e}")
+                    import random
+                    return random.randint(0, 1)
+
+        # Should not reach here, but just in case
+        import random
+        return random.randint(0, 1)
+
+    async def _predict_single_async_impl(
+        self, jet: Any, prompt: str, verbose: bool = False
+    ) -> int:
+        """
+        Implementation of async prediction for a single jet.
+
+        Parameters
+        ----------
+        jet : array-like
+            Single jet data
+        prompt : str
+            Formatted prompt
+        verbose : bool
+            If True, print detailed information
+
+        Returns
+        -------
+        int
+            Predicted label (0 or 1)
+        """
         try:
             if verbose:
                 print(f"\n🔧 API PARAMETERS")
@@ -387,6 +492,8 @@ class LocalLLMClassifier(Classifier):
                 print(f"Reasoning summary: {self.reasoning_summary}")
                 print()
 
+            import time
+            start_time = time.time()
             response = await self.async_client.responses.create(
                 model=self.model_name,
                 instructions="You are a helpful assistant.",
@@ -396,6 +503,8 @@ class LocalLLMClassifier(Classifier):
                     "summary": self.reasoning_summary
                 }
             )
+            generation_time = time.time() - start_time
+            self.total_generation_time += generation_time
 
             # Extract response content
             # The response.output is a list of ResponseReasoningItem objects
@@ -421,9 +530,9 @@ class LocalLLMClassifier(Classifier):
                 print(f"Response object: {response}")
                 return 0
 
-            # Extract reasoning trace for verbose output (async version)
+            # Extract reasoning trace (needed for token estimation, not just verbose output)
             reasoning_trace = None
-            if verbose and hasattr(response, 'output') and isinstance(response.output, list):
+            if hasattr(response, 'output') and isinstance(response.output, list):
                 if len(response.output) > 0 and hasattr(response.output[0], 'content'):
                     if isinstance(response.output[0].content, list) and len(response.output[0].content) > 0:
                         if hasattr(response.output[0].content[0], 'text'):
@@ -446,34 +555,36 @@ class LocalLLMClassifier(Classifier):
                 if total_tokens is None:
                     total_tokens = input_tokens + output_tokens
 
-                # Estimate reasoning vs completion tokens from character lengths
-                reasoning_tokens_est = 0
-                completion_tokens_est = output_tokens
+                # TODO: Improve reasoning token calculation. Currently estimated from character
+                # lengths, but OpenAI Responses API should provide accurate reasoning token counts.
+                # Check if the API returns reasoning_tokens separately in usage object.
 
-                if reasoning_trace and content:
-                    reasoning_chars = len(reasoning_trace)
-                    completion_chars = len(content)
-                    total_chars = reasoning_chars + completion_chars
+                # Try to get reasoning tokens directly from API
+                reasoning_tokens = getattr(usage, 'reasoning_tokens', None)
 
-                    if total_chars > 0:
-                        reasoning_ratio = reasoning_chars / total_chars
-                        reasoning_tokens_est = int(output_tokens * reasoning_ratio)
-                        completion_tokens_est = output_tokens - reasoning_tokens_est
+                if reasoning_tokens is None:
+                    # Fallback: estimate from character lengths if reasoning trace exists
+                    reasoning_tokens = 0
+                    completion_tokens_est = output_tokens
+
+                    if reasoning_trace and content:
+                        reasoning_chars = len(reasoning_trace)
+                        completion_chars = len(content)
+                        total_chars = reasoning_chars + completion_chars
+
+                        if total_chars > 0:
+                            # Split output_tokens proportionally based on character length
+                            reasoning_ratio = reasoning_chars / total_chars
+                            reasoning_tokens = int(output_tokens * reasoning_ratio)
+                            completion_tokens_est = output_tokens - reasoning_tokens
+                else:
+                    # API provided reasoning tokens directly
+                    completion_tokens_est = output_tokens - reasoning_tokens
 
                 # Update cumulative totals (thread-safe increment would be needed for true parallelism)
                 self.total_prompt_tokens += input_tokens
                 self.total_completion_tokens += completion_tokens_est
-                self.total_reasoning_tokens += reasoning_tokens_est
-
-                # Calculate cost
-                input_cost_per_token = 0.000000075
-                output_cost_per_token = 0.0000003
-
-                input_cost = input_tokens * input_cost_per_token
-                output_cost = output_tokens * output_cost_per_token
-                call_cost = input_cost + output_cost
-
-                self.total_cost += call_cost
+                self.total_reasoning_tokens += reasoning_tokens
 
                 if verbose:
                     print("\n" + "─" * 60)
@@ -481,15 +592,13 @@ class LocalLLMClassifier(Classifier):
                     print("─" * 60)
                     print(f"Input tokens:        {input_tokens:,}")
                     print(f"Output tokens:       {output_tokens:,}")
-                    if reasoning_tokens_est > 0:
-                        print(f"  ├─ Reasoning (est): {reasoning_tokens_est:,}")
+                    if reasoning_tokens > 0:
+                        print(f"  ├─ Reasoning (est): {reasoning_tokens:,}")
                         print(f"  └─ Completion:      {completion_tokens_est:,}")
                     print(f"Total tokens:        {total_tokens:,}")
 
-                    print(f"\n💰 COST")
-                    print(f"Input cost:          ${input_cost:.6f}")
-                    print(f"Output cost:         ${output_cost:.6f}")
-                    print(f"Call cost:           ${call_cost:.6f}")
+                    print(f"\n⏱️  GENERATION TIME")
+                    print(f"Generation time:     {generation_time:.3f}s")
 
             if verbose:
                 # Show reasoning trace if available
@@ -514,10 +623,8 @@ class LocalLLMClassifier(Classifier):
             return prediction
 
         except Exception as e:
-            print(f"Error calling local LLM API (async): {e}")
-            # Return random guess on error
-            import random
-            return random.randint(0, 1)
+            # Re-raise the exception to be handled by retry logic
+            raise
 
     def _parse_prediction(self, response: str) -> int:
         """
@@ -568,7 +675,7 @@ class LocalLLMClassifier(Classifier):
         return 0
 
     def _print_cumulative_stats(self) -> None:
-        """Print cumulative token usage and cost statistics."""
+        """Print cumulative token usage and generation time statistics."""
         total_tokens = self.total_prompt_tokens + self.total_completion_tokens + self.total_reasoning_tokens
 
         print("\n" + "═" * 60)
@@ -577,7 +684,7 @@ class LocalLLMClassifier(Classifier):
         print(f"Total prompt tokens:     {self.total_prompt_tokens:,}")
         print(f"Total completion tokens: {self.total_completion_tokens:,}")
         if self.total_reasoning_tokens > 0:
-            print(f"Total reasoning tokens:  {self.total_reasoning_tokens:,}")
+            print(f"Total reasoning tokens:  {self.total_reasoning_tokens:,} (estimate)")
         print(f"Total tokens:            {total_tokens:,}")
-        print(f"\n💰 Total estimated cost: ${self.total_cost:.6f}")
+        print(f"\n⏱️  Total generation time: {self.total_generation_time:.2f}s")
         print("═" * 60 + "\n")
