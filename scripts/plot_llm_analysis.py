@@ -72,13 +72,16 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     results = data["results"]
     metadata = data["metadata"]
 
+    # Check if bootstrap data is available
+    has_bootstrap = "bootstrap" in results[0] if results else False
+
     # Extract unique templates and efforts
     templates = sorted(set(r["template"] for r in results))
     efforts = sorted(set(r["reasoning_effort"] for r in results))
 
-    # Create figure
-    fig = plt.figure(figsize=(20, 12))
-    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+    # Create figure with 2x2 layout (removed heatmap and trade-off plot)
+    fig = plt.figure(figsize=(16, 10))
+    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
 
     # Color schemes
     effort_colors = {
@@ -91,35 +94,49 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     x_pos = np.arange(len(templates))
     width = 0.8 / len(efforts)
 
-    # 1. Accuracy Comparison
+    # 1. Accuracy Comparison with error bars
     ax1 = fig.add_subplot(gs[0, 0])
     for i, effort in enumerate(efforts):
         accuracies = []
+        errors = []
         for template in templates:
             matching = [r for r in results if r["template"] == template and r["reasoning_effort"] == effort]
-            accuracies.append(matching[0]["accuracy"] if matching else 0)
+            if matching:
+                result = matching[0]
+                if has_bootstrap:
+                    accuracies.append(result["bootstrap"]["accuracy_mean"])
+                    errors.append(result["bootstrap"]["accuracy_std"])
+                else:
+                    accuracies.append(result["accuracy"])
+                    errors.append(0)
+            else:
+                accuracies.append(0)
+                errors.append(0)
 
         offset = width * (i - len(efforts) / 2 + 0.5)
         bars = ax1.bar(
             x_pos + offset,
             accuracies,
             width,
+            yerr=errors if has_bootstrap else None,
             label=f"effort={effort}",
             color=effort_colors.get(effort, "gray"),
             alpha=0.8,
             edgecolor="black",
+            capsize=3,
         )
 
         # Add value labels
-        for bar in bars:
+        for bar, err in zip(bars, errors):
             height = bar.get_height()
+            label = f"{height:.3f}" if not has_bootstrap else f"{height:.3f}±{err:.3f}"
             ax1.text(
                 bar.get_x() + bar.get_width() / 2.0,
-                height + 0.01,
-                f"{height:.3f}",
+                height + err + 0.01,
+                label,
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=7,
             )
 
     ax1.set_ylabel("Accuracy", fontweight="bold")
@@ -130,36 +147,51 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     ax1.set_ylim([0, 1.0])
     ax1.axhline(y=0.5, color="red", linestyle="--", alpha=0.3, label="Random")
 
-    # 2. AUC Comparison
+    # 2. AUC Comparison with error bars
     ax2 = fig.add_subplot(gs[0, 1])
     for i, effort in enumerate(efforts):
         aucs = []
+        errors = []
         for template in templates:
             matching = [r for r in results if r["template"] == template and r["reasoning_effort"] == effort]
-            aucs.append(matching[0]["auc"] if matching else 0)
+            if matching:
+                result = matching[0]
+                if has_bootstrap:
+                    aucs.append(result["bootstrap"]["auc_mean"])
+                    errors.append(result["bootstrap"]["auc_std"])
+                else:
+                    aucs.append(result["auc"])
+                    errors.append(0)
+            else:
+                aucs.append(0)
+                errors.append(0)
 
         offset = width * (i - len(efforts) / 2 + 0.5)
         bars = ax2.bar(
             x_pos + offset,
             aucs,
             width,
+            yerr=errors if has_bootstrap else None,
             label=f"effort={effort}",
             color=effort_colors.get(effort, "gray"),
             alpha=0.8,
             edgecolor="black",
+            capsize=3,
         )
 
         # Add value labels
-        for bar in bars:
+        for bar, err in zip(bars, errors):
             height = bar.get_height()
-            ax2.text(
-                bar.get_x() + bar.get_width() / 2.0,
-                height + 0.01,
-                f"{height:.3f}",
-                ha="center",
-                va="bottom",
-                fontsize=8,
-            )
+            if not np.isnan(height):
+                label = f"{height:.3f}" if not has_bootstrap else f"{height:.3f}±{err:.3f}"
+                ax2.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    height + err + 0.01,
+                    label,
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                )
 
     ax2.set_ylabel("AUC", fontweight="bold")
     ax2.set_title("AUC by Template and Reasoning Effort", fontweight="bold", fontsize=12)
@@ -248,88 +280,17 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     ax4.set_xticklabels(templates, rotation=15, ha="right")
     ax4.legend()
 
-    # 5. Performance vs Time Trade-off
-    ax5 = fig.add_subplot(gs[2, 0])
-    for template in templates:
-        for effort in efforts:
-            matching = [r for r in results if r["template"] == template and r["reasoning_effort"] == effort]
-            if matching:
-                result = matching[0]
-                marker = "o" if effort == "low" else ("s" if effort == "medium" else "^")
-                ax5.scatter(
-                    result["total_generation_time"],
-                    result["auc"],
-                    s=200,
-                    marker=marker,
-                    color=effort_colors.get(effort, "gray"),
-                    alpha=0.7,
-                    edgecolor="black",
-                    linewidth=2,
-                    label=f"{template} ({effort})",
-                )
-
-    ax5.set_xlabel("Generation Time (seconds)", fontweight="bold")
-    ax5.set_ylabel("AUC", fontweight="bold")
-    ax5.set_title(
-        "Performance vs Time Trade-off (○=low, □=medium, △=high)",
-        fontweight="bold",
-        fontsize=12,
-    )
-    ax5.legend(bbox_to_anchor=(1.05, 1), loc="upper left", ncol=1, fontsize=8)
-    ax5.grid(True, alpha=0.3)
-
-    # 6. Heatmap of AUC scores
-    ax6 = fig.add_subplot(gs[2, 1])
-
-    # Create AUC matrix
-    auc_matrix = np.zeros((len(templates), len(efforts)))
-    for i, template in enumerate(templates):
-        for j, effort in enumerate(efforts):
-            matching = [r for r in results if r["template"] == template and r["reasoning_effort"] == effort]
-            if matching:
-                auc_matrix[i, j] = matching[0]["auc"]
-
-    # Plot heatmap
-    im = ax6.imshow(auc_matrix, cmap="RdYlGn", aspect="auto", vmin=0.5, vmax=1.0)
-
-    # Set ticks
-    ax6.set_xticks(np.arange(len(efforts)))
-    ax6.set_yticks(np.arange(len(templates)))
-    ax6.set_xticklabels(efforts)
-    ax6.set_yticklabels(templates)
-
-    # Add text annotations
-    for i in range(len(templates)):
-        for j in range(len(efforts)):
-            text = ax6.text(
-                j,
-                i,
-                f"{auc_matrix[i, j]:.3f}",
-                ha="center",
-                va="center",
-                color="black",
-                fontweight="bold",
-                fontsize=9,
-            )
-
-    ax6.set_title("AUC Heatmap: Template × Reasoning Effort", fontweight="bold", fontsize=12)
-    ax6.set_xlabel("Reasoning Effort", fontweight="bold")
-    ax6.set_ylabel("Template", fontweight="bold")
-
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax6)
-    cbar.set_label("AUC", fontweight="bold")
-
     # Overall title
+    bootstrap_note = " (with bootstrap error bars)" if has_bootstrap else ""
     fig.suptitle(
         f"LLM Classifier Analysis: {metadata['model_name']}\n"
-        f"{metadata['num_jets']} jets | {len(results)} configurations",
+        f"{metadata['num_jets']} jets | {len(results)} configurations{bootstrap_note}",
         fontsize=14,
         fontweight="bold",
-        y=0.995,
+        y=0.98,
     )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
     # Save or show
     if output_path:
