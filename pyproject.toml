@@ -21,6 +21,8 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "seaborn>=0.13.2",
     "xgboost>=3.0.5",
+    "openai>=2.2.0",
+    "nest-asyncio>=1.6.0",
 ]
 
 [build-system]
