@@ -78,6 +78,91 @@ class LocalLLMClassifier(Classifier):
         self.total_reasoning_tokens = 0  # Reasoning/thinking tokens (estimated)
         self.total_generation_time = 0.0  # Total time spent in generation (seconds)
 
+        # Persistent event loop for async operations
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _get_or_create_event_loop(self) -> asyncio.AbstractEventLoop:
+        """
+        Get or create a persistent event loop for async operations.
+
+        Returns
+        -------
+        asyncio.AbstractEventLoop
+            The persistent event loop
+        """
+        if self._event_loop is None or self._event_loop.is_closed():
+            self._event_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._event_loop)
+        return self._event_loop
+
+    def _run_with_persistent_loop(
+        self, X: list[Any], verbose: bool, max_concurrent: int
+    ) -> list[int]:
+        """
+        Run async predictions using a persistent event loop.
+
+        This avoids creating and destroying event loops for each predict() call,
+        which prevents "Event loop is closed" errors when running sequential
+        configurations.
+
+        Parameters
+        ----------
+        X : list
+            List of jets to classify
+        verbose : bool
+            If True, print detailed information
+        max_concurrent : int
+            Maximum number of concurrent requests
+
+        Returns
+        -------
+        list[int]
+            Predicted labels
+        """
+        loop = self._get_or_create_event_loop()
+        return loop.run_until_complete(
+            self._predict_async(X, verbose=verbose, max_concurrent=max_concurrent)
+        )
+
+    def close(self) -> None:
+        """
+        Clean up resources, including the persistent event loop and async client.
+
+        Call this when you're completely done with the classifier to free resources.
+        For sequential runs, you don't need to call this between predict() calls.
+        """
+        if self._event_loop is not None and not self._event_loop.is_closed():
+            # Clean up async client first
+            if self.async_client:
+                try:
+                    self._event_loop.run_until_complete(self.async_client.aclose())
+                except Exception:
+                    pass
+
+            # Cancel any pending tasks
+            try:
+                pending = asyncio.all_tasks(self._event_loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    self._event_loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+            except Exception:
+                pass
+
+            # Close the loop
+            try:
+                self._event_loop.close()
+            except Exception:
+                pass
+
+            self._event_loop = None
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        self.close()
+
     def fit(self, X: list[Any], y: list[Any]) -> "LocalLLMClassifier":
         """
         Prepare classifier (no-op for zero-shot).
@@ -166,52 +251,8 @@ class LocalLLMClassifier(Classifier):
                 nest_asyncio.apply()
                 predictions = asyncio.run(self._predict_async(X, verbose=verbose))
             except RuntimeError:
-                # No running loop, we can use asyncio.run()
-                # Use a new event loop to avoid cleanup issues
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    predictions = loop.run_until_complete(
-                        self._predict_async(X, verbose=verbose, max_concurrent=max_concurrent)
-                    )
-                finally:
-                    # Comprehensive cleanup to avoid "Event loop is closed" errors
-                    try:
-                        # 1. Cancel all pending tasks first
-                        pending = asyncio.all_tasks(loop)
-                        for task in pending:
-                            task.cancel()
-
-                        # 2. Wait for tasks to be cancelled
-                        if pending:
-                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-
-                        # 3. Close the async client explicitly
-                        if self.async_client:
-                            loop.run_until_complete(self.async_client.aclose())
-
-                        # 4. Give a moment for cleanup
-                        loop.run_until_complete(asyncio.sleep(0.1))
-
-                    except Exception as e:
-                        # Suppress cleanup errors but continue
-                        pass
-
-                    finally:
-                        # 5. Close the loop
-                        try:
-                            loop.close()
-                        except Exception:
-                            pass
-
-                        # 6. Create a new async client for next use
-                        try:
-                            self.async_client = AsyncOpenAI(
-                                base_url=self.base_url,
-                                api_key=self.api_key,
-                            )
-                        except Exception:
-                            pass
+                # No running loop - use our persistent event loop
+                predictions = self._run_with_persistent_loop(X, verbose, max_concurrent)
         else:
             # Sequential processing
             predictions = []
