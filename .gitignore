@@ -222,3 +222,4 @@ data/
 *.json.gz
 *.tar.gz
 *.zip
+results/
