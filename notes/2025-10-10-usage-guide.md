@@ -77,3 +77,7 @@ nvidia-smi              # GPU usage
 **Connection errors:** Reduce `--max_concurrent` to 20 or 10
 **Out of memory:** Check `nvidia-smi`, reduce concurrent requests
 **Slow:** Increase `--max_concurrent` if GPU underutilized
+
+## Recent Fixes
+
+**Event loop cleanup (2025-10-10):** Fixed "Event loop is closed" errors that occurred when running multiple sequential configurations. The classifier now uses a persistent event loop that stays alive across predict() calls, preventing cleanup issues with high concurrency.
