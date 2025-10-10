@@ -79,9 +79,9 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     templates = sorted(set(r["template"] for r in results))
     efforts = sorted(set(r["reasoning_effort"] for r in results))
 
-    # Create figure with 2x2 layout (removed heatmap and trade-off plot)
-    fig = plt.figure(figsize=(16, 10))
-    gs = fig.add_gridspec(2, 2, hspace=0.3, wspace=0.3)
+    # Create figure with 2x2 top + 1 wide bottom layout
+    fig = plt.figure(figsize=(16, 12))
+    gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3, height_ratios=[1, 1, 1])
 
     # Color schemes
     effort_colors = {
@@ -279,6 +279,86 @@ def plot_comprehensive_comparison(data: dict, output_path: Path | None = None, s
     ax4.set_xticks(x_pos)
     ax4.set_xticklabels(templates, rotation=15, ha="right")
     ax4.legend()
+
+    # 5. Performance vs Time Trade-off (wide bottom panel)
+    ax5 = fig.add_subplot(gs[2, :])  # Spans both columns
+
+    # Plot each template with lines connecting reasoning efforts
+    template_colors = plt.cm.tab10(np.linspace(0, 1, len(templates)))
+
+    for idx, template in enumerate(templates):
+        template_data = []
+        for effort in efforts:
+            matching = [r for r in results if r["template"] == template and r["reasoning_effort"] == effort]
+            if matching:
+                result = matching[0]
+                if has_bootstrap:
+                    auc = result["bootstrap"]["auc_mean"]
+                    auc_err = result["bootstrap"]["auc_std"]
+                else:
+                    auc = result["auc"]
+                    auc_err = 0
+
+                template_data.append({
+                    "effort": effort,
+                    "time": result["total_generation_time"],
+                    "auc": auc,
+                    "auc_err": auc_err,
+                })
+
+        if template_data:
+            # Sort by time (reasoning effort order)
+            template_data.sort(key=lambda x: efforts.index(x["effort"]))
+
+            times = [d["time"] for d in template_data]
+            aucs = [d["auc"] for d in template_data]
+            auc_errs = [d["auc_err"] for d in template_data]
+
+            # Plot line connecting same template
+            ax5.plot(
+                times,
+                aucs,
+                marker="o",
+                markersize=10,
+                linewidth=2,
+                label=template,
+                color=template_colors[idx],
+                alpha=0.7,
+            )
+
+            # Add error bars if available
+            if has_bootstrap and any(auc_errs):
+                ax5.errorbar(
+                    times,
+                    aucs,
+                    yerr=auc_errs,
+                    fmt="none",
+                    color=template_colors[idx],
+                    alpha=0.5,
+                    capsize=3,
+                )
+
+            # Annotate with effort labels
+            for d in template_data:
+                ax5.annotate(
+                    d["effort"][0].upper(),  # L, M, H
+                    (d["time"], d["auc"]),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                    alpha=0.7,
+                )
+
+    ax5.set_xlabel("Generation Time (seconds)", fontweight="bold", fontsize=12)
+    ax5.set_ylabel("AUC", fontweight="bold", fontsize=12)
+    ax5.set_title(
+        "Performance vs Time Trade-off (lines connect same template across reasoning efforts)",
+        fontweight="bold",
+        fontsize=12,
+    )
+    ax5.legend(loc="best", ncol=2, fontsize=10)
+    ax5.grid(True, alpha=0.3)
+    ax5.set_ylim([0.5, 1.0])
 
     # Overall title
     bootstrap_note = " (with bootstrap error bars)" if has_bootstrap else ""
