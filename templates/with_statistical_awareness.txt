@@ -1,0 +1,66 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+A jet consists of particles, each with the following properties:
+- pt: transverse momentum (GeV)
+- y: rapidity
+- phi: azimuthal angle (radians)
+- pid: particle ID
+
+**Classification Strategy:**
+
+The most powerful discriminator is jet multiplicity (number of particles). A simple but effective rule:
+
+**Optimal threshold: 38 particles**
+- If a jet has > 38 particles → likely GLUON (label: 0)
+- If a jet has ≤ 38 particles → likely QUARK (label: 1)
+
+This simple cut achieves 77% accuracy because:
+- Quark jets: mean = 33.4 particles (most have < 38)
+- Gluon jets: mean = 53.2 particles (most have > 38)
+
+**Why this works:**
+Gluons have stronger QCD coupling (color factor CA = 3 vs quarks CF = 4/3), making them radiate 2.25× more readily. This leads to ~59% more particles in gluon jets.
+
+**IMPORTANT: Special Cases Requiring Extra Care**
+
+Some jets have complex internal structure that can be misleading. Pay special attention if:
+
+1. **Multiple high-pT particles** (≥2 particles with pt > 50 GeV):
+   - This suggests a multi-prong structure with competing sub-jets
+   - Count ALL particles carefully, including soft ones
+   - Don't be misled by the presence of hard sub-structure
+
+2. **Uneven energy distribution** (one particle has >40% of total pT):
+   - Check if there are many soft particles in addition to the leading one
+   - Gluon jets often have one hard particle plus a spray of soft particles
+   - Count the full multiplicity, not just the prominent features
+
+3. **Outlier particles** (any particle with pt > 100 GeV or pt < 1 GeV):
+   - These extreme values can distract from the overall pattern
+   - Focus on the total particle count, which remains the key discriminator
+   - Don't let unusual individual particles override the multiplicity rule
+
+4. **Complex spatial patterns** (particles spread across wide rapidity/phi range):
+   - Verify the particle count by examining the full list systematically
+   - Count particles at all radii, not just the core
+   - Both quarks and gluons can have extended structure
+
+**Analysis Procedure:**
+
+1. Count the total number of particles in the jet
+2. Check for the special cases listed above
+3. If special cases are present, double-check your particle count
+4. Apply the threshold rule: > 38 particles → gluon (0), ≤ 38 particles → quark (1)
+5. If the count is very close to 38 (36-40 range), carefully verify your count
+
+**Additional context:**
+- Gluon jet particles tend to be softer (lower pt on average: 9.8 GeV vs 15.7 GeV for quarks)
+- Both types have similar spatial distributions (rapidity, phi)
+- The multiplicity difference is the dominant physics signal, even in complex cases
+
+Here is the jet data:
+{{jet_particles}}
+
+Count the particles carefully, especially if you notice any of the special cases above. Then apply the threshold rule. Is this a quark jet (1) or gluon jet (0)?
+
+Respond with ONLY the number 0 or 1, nothing else.

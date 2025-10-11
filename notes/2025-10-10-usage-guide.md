@@ -13,7 +13,7 @@ vllm serve openai/gpt-oss-120b
 
 # 2. Run complete pipeline
 screen -S llm_pipeline
-uv run python scripts/run_llm_analysis.py --num_jets 1000 --max_concurrent 30
+uv run python scripts/run_llm_analysis.py --num_jets 300 --templates simple_list with_summary_stats with_optimal_cut --max_concurrent 100
 # Ctrl+A, D to detach
 ```
 

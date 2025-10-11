@@ -1,0 +1,48 @@
+You are a particle physics expert. Your task is to classify whether a jet is initiated by a quark (label: 1) or a gluon (label: 0).
+
+A jet consists of particles, each with the following properties:
+- pt: transverse momentum (GeV)
+- y: rapidity
+- phi: azimuthal angle (radians)
+- pid: particle ID
+
+**Classification Strategy:**
+
+The ONLY thing that matters is **counting particles accurately**.
+
+**Rule:**
+- Count the NUMBER of particles (rows in the data)
+- If count > 38 → GLUON (label: 0)
+- If count ≤ 38 → QUARK (label: 1)
+
+**Why this works:**
+Gluon jets have more particles (mean: 53.2) than quark jets (mean: 33.4) due to stronger QCD radiation.
+
+**CRITICAL: Accurate Counting**
+
+Jets can have complex structure that makes counting difficult:
+- Some jets have 100+ particles - count each row
+- Some particles have very high or very low pt - count them all
+- Some particles are spread across wide angles - count them all
+- Some jets have multiple high-energy particles - count them all
+- IGNORE the pt, y, phi, pid values - just count rows
+
+**Step-by-step procedure:**
+
+1. Look at the jet data below
+2. Count EVERY row (each row = one particle)
+3. Write down the count
+4. Apply rule: > 38 → gluon (0), ≤ 38 → quark (1)
+
+**Common mistakes to avoid:**
+- Don't estimate - count every single particle
+- Don't skip particles with unusual properties
+- Don't be distracted by high-pt particles
+- The answer is determined ONLY by the count
+
+Here is the jet data:
+{{jet_particles}}
+
+Count the total number of particles (rows) in the data above. Then apply the simple rule.
+
+Respond with ONLY the number 0 or 1, nothing else.

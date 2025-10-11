@@ -40,7 +40,12 @@ sys.path.insert(0, str(project_root / "src"))
 from vibe_jet_tagging.local_llm_classifier import LocalLLMClassifier
 
 
-def load_data(data_path: Path, num_jets: int) -> tuple[np.ndarray, np.ndarray]:
+def load_data(
+    data_path: Path,
+    num_jets: int,
+    random_sample: bool = False,
+    seed: int = 42
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Load jet data and labels.
 
     Parameters
@@ -49,6 +54,10 @@ def load_data(data_path: Path, num_jets: int) -> tuple[np.ndarray, np.ndarray]:
         Path to the data file
     num_jets : int
         Number of jets to load
+    random_sample : bool
+        If True, randomly sample jets; otherwise use sequential indices
+    seed : int
+        Random seed for reproducibility
 
     Returns
     -------
@@ -56,16 +65,29 @@ def load_data(data_path: Path, num_jets: int) -> tuple[np.ndarray, np.ndarray]:
         Jet data (num_jets, n_particles, 4)
     y : np.ndarray
         Labels (num_jets,)
+    indices : np.ndarray
+        Jet indices in the original dataset
     """
     data = np.load(data_path)
-    X = data["X"][:num_jets]
-    y = data["y"][:num_jets]
+    total_jets = len(data["X"])
 
-    print(f"✓ Loaded {len(X)} jets")
+    if random_sample:
+        rng = np.random.RandomState(seed)
+        indices = rng.choice(total_jets, size=num_jets, replace=False)
+        indices.sort()  # Sort for reproducibility
+        print(f"✓ Randomly sampled {num_jets} jets (seed={seed})")
+    else:
+        indices = np.arange(num_jets)
+        print(f"✓ Using sequential jets [0:{num_jets}]")
+
+    X = data["X"][indices]
+    y = data["y"][indices]
+
     print(f"  - Quark jets: {(y == 1).sum()}")
     print(f"  - Gluon jets: {(y == 0).sum()}")
+    print(f"  - Index range: [{indices.min()}, {indices.max()}]")
 
-    return X, y
+    return X, y, indices
 
 
 def evaluate_configuration(
@@ -73,6 +95,7 @@ def evaluate_configuration(
     reasoning_effort: str,
     X: np.ndarray,
     y: np.ndarray,
+    jet_indices: np.ndarray,
     base_url: str,
     api_key: str,
     templates_dir: Path,
@@ -155,6 +178,7 @@ def evaluate_configuration(
         ),
         "predictions": predictions.tolist(),
         "true_labels": y.tolist(),
+        "jet_indices": jet_indices.tolist(),
     }
 
     # Print summary
@@ -253,6 +277,19 @@ def main():
         help="Maximum number of concurrent requests (default: 50)",
     )
 
+    parser.add_argument(
+        "--random_sample",
+        action="store_true",
+        help="Randomly sample jets instead of sequential",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for jet sampling (default: 42)",
+    )
+
     args = parser.parse_args()
 
     # Set default paths
@@ -303,7 +340,7 @@ def main():
 
     # Load data
     print(f"\nLoading data from {args.data_path}...")
-    X, y = load_data(args.data_path, args.num_jets)
+    X, y, jet_indices = load_data(args.data_path, args.num_jets, args.random_sample, args.seed)
 
     # Run all configurations
     all_results = []
@@ -323,6 +360,7 @@ def main():
                     reasoning_effort=effort,
                     X=X,
                     y=y,
+                    jet_indices=jet_indices,
                     base_url=args.base_url,
                     api_key=args.api_key,
                     templates_dir=args.templates_dir,
@@ -349,6 +387,8 @@ def main():
             "base_url": args.base_url,
             "data_path": str(args.data_path),
             "templates_dir": str(args.templates_dir),
+            "random_sample": args.random_sample,
+            "seed": args.seed,
             "total_elapsed_time": float(total_elapsed),
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         },
