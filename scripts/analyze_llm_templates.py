@@ -150,13 +150,16 @@ def evaluate_configuration(
     # Make predictions
     print(f"Processing {len(X)} jets (async mode, max {max_concurrent} concurrent)...")
     start_time = time.time()
-    predictions = clf.predict(X, verbose=False, use_async=True, max_concurrent=max_concurrent)
+    probabilities = clf.predict(X, verbose=False, use_async=True, max_concurrent=max_concurrent)
     elapsed_time = time.time() - start_time
 
     # Calculate metrics
-    predictions = np.array(predictions)
+    probabilities = np.array(probabilities)
+    # Convert probabilities to binary predictions for accuracy (threshold at 0.5)
+    predictions = (probabilities >= 0.5).astype(int)
     accuracy = accuracy_score(y, predictions)
-    auc = roc_auc_score(y, predictions)
+    # Use probabilities for AUC calculation
+    auc = roc_auc_score(y, probabilities)
 
     # Collect results
     results = {
@@ -176,7 +179,8 @@ def evaluate_configuration(
             + clf.total_completion_tokens
             + clf.total_reasoning_tokens
         ),
-        "predictions": predictions.tolist(),
+        "probabilities": probabilities.tolist(),  # Store probabilities
+        "predictions": predictions.tolist(),  # Store binary predictions
         "true_labels": y.tolist(),
         "jet_indices": jet_indices.tolist(),
     }

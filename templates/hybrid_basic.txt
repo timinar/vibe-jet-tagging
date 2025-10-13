@@ -11,6 +11,11 @@ This jet contains {{multiplicity}} particles.
 **Raw Particle Data:**
 {{jet_particles}}
 
-Based on the multiplicity feature and the raw particle data, is this a quark jet (1) or gluon jet (0)?
+Based on the multiplicity feature and the raw particle data, what is the probability that this jet is a quark jet?
 
-Respond with ONLY the number 0 or 1, nothing else.
+Respond with ONLY a single number between 0 and 1, where:
+- 0.0 means definitely a gluon jet
+- 1.0 means definitely a quark jet
+- Values in between represent your confidence
+
+Respond with ONLY the probability value, nothing else.

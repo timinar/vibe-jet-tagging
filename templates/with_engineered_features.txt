@@ -54,7 +54,14 @@ Expert physicists use multiple hand-engineered features for classification. Here
 Here is the jet data:
 {{jet_particles}}
 
-Analyze the jet using the engineered features above. Is this a quark jet (1) or gluon jet (0)?
+Analyze the jet using the engineered features above. What is the probability that this jet is a quark jet?
 
-Respond with ONLY the number 0 or 1, nothing else.
+Respond with ONLY a single number between 0 and 1, where:
+- 0.0 means definitely a gluon jet
+- 1.0 means definitely a quark jet
+- Values in between represent your confidence (e.g., 0.7 means 70% confident it's a quark jet)
+
+Consider the strength of multiple features when determining your confidence level.
+
+Respond with ONLY the probability value, nothing else.
 

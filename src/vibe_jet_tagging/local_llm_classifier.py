@@ -121,7 +121,7 @@ class LocalLLMClassifier(Classifier):
 
     def _run_with_persistent_loop(
         self, X: list[Any], verbose: bool, max_concurrent: int
-    ) -> list[int]:
+    ) -> list[float]:
         """
         Run async predictions using a persistent event loop.
 
@@ -140,8 +140,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        list[int]
-            Predicted labels
+        list[float]
+            Predicted probabilities
         """
         loop = self._get_or_create_event_loop()
         return loop.run_until_complete(
@@ -269,9 +269,9 @@ class LocalLLMClassifier(Classifier):
         verbose: bool = False,
         use_async: bool = True,
         max_concurrent: int = 50
-    ) -> list[int]:
+    ) -> list[float]:
         """
-        Predict jet labels using local LLM.
+        Predict jet probabilities using local LLM.
 
         Parameters
         ----------
@@ -288,8 +288,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        list[int]
-            Predicted labels (0 for gluon, 1 for quark)
+        list[float]
+            Predicted probabilities (0.0 to 1.0, where 1.0 = quark, 0.0 = gluon)
         """
         if not self.is_fitted:
             raise ValueError("Classifier must be fitted before predict")
@@ -320,9 +320,9 @@ class LocalLLMClassifier(Classifier):
 
     async def _predict_async(
         self, X: list[Any], verbose: bool = False, max_concurrent: int = 50
-    ) -> list[int]:
+    ) -> list[float]:
         """
-        Predict labels for multiple jets concurrently using async with batching.
+        Predict probabilities for multiple jets concurrently using async with batching.
 
         Parameters
         ----------
@@ -335,8 +335,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        list[int]
-            Predicted labels (0 for gluon, 1 for quark)
+        list[float]
+            Predicted probabilities (0.0 to 1.0, where 1.0 = quark, 0.0 = gluon)
         """
         # Use semaphore to limit concurrent requests
         semaphore = asyncio.Semaphore(max_concurrent)
@@ -357,9 +357,8 @@ class LocalLLMClassifier(Classifier):
         for i, pred in enumerate(predictions):
             if isinstance(pred, Exception):
                 print(f"Warning: Error predicting jet {i}: {pred}")
-                # Return random guess on error
-                import random
-                results.append(random.randint(0, 1))
+                # Return uncertain probability on error
+                results.append(0.5)
                 failed_count += 1
             else:
                 results.append(pred)
@@ -369,9 +368,9 @@ class LocalLLMClassifier(Classifier):
 
         return results
 
-    def _predict_single(self, jet: Any, verbose: bool = False) -> int:
+    def _predict_single(self, jet: Any, verbose: bool = False) -> float:
         """
-        Predict label for a single jet.
+        Predict probability for a single jet.
 
         Parameters
         ----------
@@ -382,8 +381,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        int
-            Predicted label (0 or 1)
+        float
+            Predicted probability (0.0 to 1.0, where 1.0 = quark, 0.0 = gluon)
         """
         # Format jet and fill template
         prompt = fill_template(self.template, jet, self.format_type)
@@ -531,16 +530,15 @@ class LocalLLMClassifier(Classifier):
 
         except Exception as e:
             print(f"Error calling local LLM API: {e}")
-            # Return random guess on error
+            # Return uncertain probability on error
             self.failed_predictions += 1
-            import random
-            return random.randint(0, 1)
+            return 0.5
 
     async def _predict_single_async(
         self, jet: Any, verbose: bool = False, max_retries: int = 3
-    ) -> int:
+    ) -> float:
         """
-        Predict label for a single jet asynchronously with retry logic.
+        Predict probability for a single jet asynchronously with retry logic.
 
         Parameters
         ----------
@@ -553,8 +551,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        int
-            Predicted label (0 or 1)
+        float
+            Predicted probability (0.0 to 1.0, where 1.0 = quark, 0.0 = gluon)
         """
         # Format jet and fill template
         prompt = fill_template(self.template, jet, self.format_type)
@@ -577,23 +575,20 @@ class LocalLLMClassifier(Classifier):
                     else:
                         print(f"Error calling local LLM API (async): {e}")
                         self.failed_predictions += 1
-                        import random
-                        return random.randint(0, 1)
+                        return 0.5
                 else:
                     # Not a connection error, don't retry
                     print(f"Error calling local LLM API (async): {e}")
                     self.failed_predictions += 1
-                    import random
-                    return random.randint(0, 1)
+                    return 0.5
 
         # Should not reach here, but just in case
         self.failed_predictions += 1
-        import random
-        return random.randint(0, 1)
+        return 0.5
 
     async def _predict_single_async_impl(
         self, jet: Any, prompt: str, verbose: bool = False
-    ) -> int:
+    ) -> float:
         """
         Implementation of async prediction for a single jet.
 
@@ -608,8 +603,8 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        int
-            Predicted label (0 or 1)
+        float
+            Predicted probability (0.0 to 1.0, where 1.0 = quark, 0.0 = gluon)
         """
         try:
             if verbose:
@@ -753,12 +748,14 @@ class LocalLLMClassifier(Classifier):
             # Re-raise the exception to be handled by retry logic
             raise
 
-    def _parse_prediction(self, response: str) -> int:
+    def _parse_prediction(self, response: str) -> float:
         """
-        Parse LLM response to extract 0 or 1.
+        Parse LLM response to extract probability value between 0 and 1.
 
-        The model typically provides reasoning followed by a final answer.
-        We look for the LAST occurrence of 0 or 1, which is usually the final answer.
+        The model should provide a probability where:
+        - 0.0 means definitely a gluon jet
+        - 1.0 means definitely a quark jet
+        - Values in between represent confidence
 
         Parameters
         ----------
@@ -767,39 +764,62 @@ class LocalLLMClassifier(Classifier):
 
         Returns
         -------
-        int
-            Parsed label (0 or 1)
+        float
+            Parsed probability (0.0 to 1.0)
         """
-        # Strategy 1: Look for common answer patterns at the end
-        # Patterns like "answer: 1", "label: 0", "prediction: 1", or just "1" at the end
-        end_patterns = [
-            r'(?:answer|label|prediction|output|result)[:=\s]+([01])\b',
-            r'\b([01])\s*$',  # 0 or 1 at the very end
-            r'(?:thus|therefore|so|hence).*?([01])\b',  # After conclusion words
+        # Strategy 1: Look for decimal numbers between 0 and 1
+        # Match patterns like "0.75", "0.8", ".95", etc.
+        decimal_patterns = [
+            r'(?:probability|confidence|answer|result)[:=\s]+([0-9]*\.?[0-9]+)',
+            r'\b(0\.[0-9]+|1\.0+|0\.0+)\b',  # Decimal between 0 and 1
+            r'\b(0|1)\.[0-9]+\b',  # 0.x or 1.x
+            r'(?:^|\s)([0-9]*\.?[0-9]+)(?:\s|$)',  # Any number near word boundaries
         ]
 
-        for pattern in end_patterns:
+        for pattern in decimal_patterns:
             matches = list(re.finditer(pattern, response, re.IGNORECASE))
             if matches:
-                # Get the LAST match
-                return int(matches[-1].group(1))
+                # Get the LAST match (most likely the final answer)
+                try:
+                    value = float(matches[-1].group(1))
+                    # Check if it's in valid range
+                    if 0.0 <= value <= 1.0:
+                        return value
+                except (ValueError, IndexError):
+                    continue
 
-        # Strategy 2: Find ALL occurrences of 0 or 1, take the last one
-        all_matches = list(re.finditer(r'\b[01]\b', response))
-        if all_matches:
-            # Return the LAST occurrence (most likely the final answer)
-            return int(all_matches[-1].group())
+        # Strategy 2: Look for standalone decimals at the end of response
+        # This catches cases where the model just outputs "0.75" or similar
+        end_match = re.search(r'([0-9]*\.?[0-9]+)\s*$', response.strip())
+        if end_match:
+            try:
+                value = float(end_match.group(1))
+                if 0.0 <= value <= 1.0:
+                    return value
+            except ValueError:
+                pass
 
-        # Strategy 3: Check for keywords (fallback)
+        # Strategy 3: Check for binary 0 or 1 (fallback for models that still output binary)
+        binary_match = re.search(r'\b([01])\b(?!\.)', response)
+        if binary_match:
+            return float(binary_match.group(1))
+
+        # Strategy 4: Check for keywords (last resort fallback)
         response_lower = response.lower()
-        if "quark" in response_lower:
-            return 1
-        elif "gluon" in response_lower:
-            return 0
+        if "definitely" in response_lower or "certainly" in response_lower:
+            if "quark" in response_lower:
+                return 1.0
+            elif "gluon" in response_lower:
+                return 0.0
 
-        # Default to 0 if unclear
-        print(f"Warning: Could not parse prediction from response: '{response[:100]}...'")
-        return 0
+        if "quark" in response_lower and "gluon" not in response_lower:
+            return 0.8  # Favor quark but not certain
+        elif "gluon" in response_lower and "quark" not in response_lower:
+            return 0.2  # Favor gluon but not certain
+
+        # Default to 0.5 (uncertain) if we can't parse
+        print(f"Warning: Could not parse probability from response: '{response[:100]}...'")
+        return 0.5
 
     def _print_cumulative_stats(self) -> None:
         """Print cumulative token usage and generation time statistics."""
