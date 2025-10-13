@@ -80,6 +80,7 @@ class LocalLLMClassifier(Classifier):
         self.total_completion_tokens = 0
         self.total_reasoning_tokens = 0  # Reasoning/thinking tokens (estimated)
         self.total_generation_time = 0.0  # Total time spent in generation (seconds)
+        self.failed_predictions = 0  # Track failed predictions
 
         # Persistent event loop for async operations
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -352,14 +353,19 @@ class LocalLLMClassifier(Classifier):
 
         # Handle any exceptions
         results = []
+        failed_count = 0
         for i, pred in enumerate(predictions):
             if isinstance(pred, Exception):
                 print(f"Warning: Error predicting jet {i}: {pred}")
                 # Return random guess on error
                 import random
                 results.append(random.randint(0, 1))
+                failed_count += 1
             else:
                 results.append(pred)
+
+        # Update total failed predictions count
+        self.failed_predictions += failed_count
 
         return results
 
@@ -526,6 +532,7 @@ class LocalLLMClassifier(Classifier):
         except Exception as e:
             print(f"Error calling local LLM API: {e}")
             # Return random guess on error
+            self.failed_predictions += 1
             import random
             return random.randint(0, 1)
 
@@ -569,15 +576,18 @@ class LocalLLMClassifier(Classifier):
                         continue
                     else:
                         print(f"Error calling local LLM API (async): {e}")
+                        self.failed_predictions += 1
                         import random
                         return random.randint(0, 1)
                 else:
                     # Not a connection error, don't retry
                     print(f"Error calling local LLM API (async): {e}")
+                    self.failed_predictions += 1
                     import random
                     return random.randint(0, 1)
 
         # Should not reach here, but just in case
+        self.failed_predictions += 1
         import random
         return random.randint(0, 1)
 
@@ -804,4 +814,10 @@ class LocalLLMClassifier(Classifier):
             print(f"Total reasoning tokens:  {self.total_reasoning_tokens:,} (estimate)")
         print(f"Total tokens:            {total_tokens:,}")
         print(f"\n⏱️  Total generation time: {self.total_generation_time:.2f}s")
+        
+        # Show failed predictions warning if any
+        if self.failed_predictions > 0:
+            print(f"\n⚠️  FAILED PREDICTIONS: {self.failed_predictions:,}")
+            print(f"   (replaced with random guesses)")
+        
         print("═" * 60 + "\n")
