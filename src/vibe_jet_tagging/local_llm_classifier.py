@@ -460,31 +460,17 @@ class LocalLLMClassifier(Classifier):
                 if total_tokens is None:
                     total_tokens = input_tokens + output_tokens
 
-                # TODO: Improve reasoning token calculation. Currently estimated from character
-                # lengths, but OpenAI Responses API should provide accurate reasoning token counts.
-                # Check if the API returns reasoning_tokens separately in usage object.
-
-                # Try to get reasoning tokens directly from API
-                reasoning_tokens = getattr(usage, 'reasoning_tokens', None)
-
-                if reasoning_tokens is None:
-                    # Fallback: estimate from character lengths if reasoning trace exists
-                    reasoning_tokens = 0
-                    completion_tokens_est = output_tokens
-
-                    if reasoning_trace and content:
-                        reasoning_chars = len(reasoning_trace)
-                        completion_chars = len(content)
-                        total_chars = reasoning_chars + completion_chars
-
-                        if total_chars > 0:
-                            # Split output_tokens proportionally based on character length
-                            reasoning_ratio = reasoning_chars / total_chars
-                            reasoning_tokens = int(output_tokens * reasoning_ratio)
-                            completion_tokens_est = output_tokens - reasoning_tokens
-                else:
-                    # API provided reasoning tokens directly
-                    completion_tokens_est = output_tokens - reasoning_tokens
+                # Get reasoning tokens from the correct location in the API response.
+                # The OpenAI Responses API returns reasoning tokens in:
+                #   response.usage.output_tokens_details.reasoning_tokens
+                # NOT in response.usage.reasoning_tokens (which doesn't exist)
+                
+                reasoning_tokens = 0
+                if hasattr(usage, 'output_tokens_details') and usage.output_tokens_details:
+                    reasoning_tokens = getattr(usage.output_tokens_details, 'reasoning_tokens', 0) or 0
+                
+                # Completion tokens = total output tokens - reasoning tokens
+                completion_tokens_est = output_tokens - reasoning_tokens
 
                 # Update cumulative totals
                 self.total_prompt_tokens += input_tokens
@@ -498,7 +484,7 @@ class LocalLLMClassifier(Classifier):
                     print(f"Input tokens:        {input_tokens:,}")
                     print(f"Output tokens:       {output_tokens:,}")
                     if reasoning_tokens > 0:
-                        print(f"  ├─ Reasoning (est): {reasoning_tokens:,}")
+                        print(f"  ├─ Reasoning:       {reasoning_tokens:,}")
                         print(f"  └─ Completion:      {completion_tokens_est:,}")
                     print(f"Total tokens:        {total_tokens:,}")
 
@@ -677,31 +663,17 @@ class LocalLLMClassifier(Classifier):
                 if total_tokens is None:
                     total_tokens = input_tokens + output_tokens
 
-                # TODO: Improve reasoning token calculation. Currently estimated from character
-                # lengths, but OpenAI Responses API should provide accurate reasoning token counts.
-                # Check if the API returns reasoning_tokens separately in usage object.
-
-                # Try to get reasoning tokens directly from API
-                reasoning_tokens = getattr(usage, 'reasoning_tokens', None)
-
-                if reasoning_tokens is None:
-                    # Fallback: estimate from character lengths if reasoning trace exists
-                    reasoning_tokens = 0
-                    completion_tokens_est = output_tokens
-
-                    if reasoning_trace and content:
-                        reasoning_chars = len(reasoning_trace)
-                        completion_chars = len(content)
-                        total_chars = reasoning_chars + completion_chars
-
-                        if total_chars > 0:
-                            # Split output_tokens proportionally based on character length
-                            reasoning_ratio = reasoning_chars / total_chars
-                            reasoning_tokens = int(output_tokens * reasoning_ratio)
-                            completion_tokens_est = output_tokens - reasoning_tokens
-                else:
-                    # API provided reasoning tokens directly
-                    completion_tokens_est = output_tokens - reasoning_tokens
+                # Get reasoning tokens from the correct location in the API response.
+                # The OpenAI Responses API returns reasoning tokens in:
+                #   response.usage.output_tokens_details.reasoning_tokens
+                # NOT in response.usage.reasoning_tokens (which doesn't exist)
+                
+                reasoning_tokens = 0
+                if hasattr(usage, 'output_tokens_details') and usage.output_tokens_details:
+                    reasoning_tokens = getattr(usage.output_tokens_details, 'reasoning_tokens', 0) or 0
+                
+                # Completion tokens = total output tokens - reasoning tokens
+                completion_tokens_est = output_tokens - reasoning_tokens
 
                 # Update cumulative totals (thread-safe increment would be needed for true parallelism)
                 self.total_prompt_tokens += input_tokens
@@ -715,7 +687,7 @@ class LocalLLMClassifier(Classifier):
                     print(f"Input tokens:        {input_tokens:,}")
                     print(f"Output tokens:       {output_tokens:,}")
                     if reasoning_tokens > 0:
-                        print(f"  ├─ Reasoning (est): {reasoning_tokens:,}")
+                        print(f"  ├─ Reasoning:       {reasoning_tokens:,}")
                         print(f"  └─ Completion:      {completion_tokens_est:,}")
                     print(f"Total tokens:        {total_tokens:,}")
 
